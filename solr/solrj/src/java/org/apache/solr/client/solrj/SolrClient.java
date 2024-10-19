@@ -16,6 +16,8 @@
  */
 package org.apache.solr.client.solrj;
 
+import static org.apache.solr.common.util.Utils.getObjectByPath;
+
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.Serializable;
@@ -1227,11 +1229,11 @@ public abstract class SolrClient implements Serializable, Closeable {
     return defaultCollection;
   }
 
-  /**
-   * Subclass of SolrException that allows us to capture an arbitrary HTTP status code that may have
-   * been returned by the remote server or a proxy along the way.
-   */
+  /** A SolrException for a call to Solr with an HTTP status code and maybe more metadata. */
   public static class RemoteSolrException extends SolrException {
+
+    private final NamedList<?> meta;
+
     /**
      * @param remoteHost the host the error was received from
      * @param code Arbitrary HTTP status code
@@ -1239,7 +1241,38 @@ public abstract class SolrClient implements Serializable, Closeable {
      * @param th Throwable to wrap with this Exception
      */
     public RemoteSolrException(String remoteHost, int code, String msg, Throwable th) {
-      super(code, "Error from server at " + remoteHost + ": " + msg, th);
+      this(remoteHost, code, msg, th, null);
+    }
+
+    private RemoteSolrException(
+        String remoteHost, int code, String msg, Throwable th, NamedList<?> meta) {
+      super(
+          code,
+          "Error from server at " + remoteHost + ": " + msg + (meta != null ? ": " + meta : ""),
+          th);
+      this.meta = meta;
+    }
+
+    /**
+     * @lucene.internal
+     */
+    public static RemoteSolrException create(String host, NamedList<?> errResponse) {
+      Object errObj = errResponse.get("error");
+      if (errObj == null) {
+        throw new RuntimeException("No error");
+      }
+      Number code = (Number) getObjectByPath(errObj, true, Collections.singletonList("code"));
+      String msg = (String) getObjectByPath(errObj, true, Collections.singletonList("msg"));
+      return new RemoteSolrException(
+          host,
+          code == null ? ErrorCode.UNKNOWN.code : code.intValue(),
+          msg == null ? "Unknown Error" : msg,
+          null,
+          errResponse);
+    }
+
+    public NamedList<?> getMetaData() {
+      return meta;
     }
   }
 }

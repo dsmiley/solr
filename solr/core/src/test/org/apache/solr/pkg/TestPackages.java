@@ -42,10 +42,10 @@ import org.apache.lucene.analysis.pattern.PatternReplaceCharFilterFactory;
 import org.apache.lucene.util.ResourceLoader;
 import org.apache.lucene.util.ResourceLoaderAware;
 import org.apache.solr.client.solrj.SolrClient;
+import org.apache.solr.client.solrj.SolrClient.RemoteSolrException;
 import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.SolrRequest;
 import org.apache.solr.client.solrj.SolrServerException;
-import org.apache.solr.client.solrj.impl.BaseHttpSolrClient;
 import org.apache.solr.client.solrj.impl.HttpSolrClient;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest;
 import org.apache.solr.client.solrj.request.GenericSolrRequest;
@@ -885,7 +885,7 @@ public class TestPackages extends SolrCloudTestCase {
     try {
       req.process(client);
       fail("should have failed with message : " + expectErrorMsg);
-    } catch (BaseHttpSolrClient.RemoteExecutionException e) {
+    } catch (RemoteSolrException e) {
       String msg = e.getMetaData()._getStr(errPath, "");
       assertTrue(
           "should have failed with message: " + expectErrorMsg + "actual message : " + msg,

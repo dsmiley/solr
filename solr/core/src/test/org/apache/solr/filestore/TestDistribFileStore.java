@@ -36,9 +36,9 @@ import java.util.function.Predicate;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.http.client.methods.HttpDelete;
 import org.apache.solr.client.solrj.SolrClient;
+import org.apache.solr.client.solrj.SolrClient.RemoteSolrException;
 import org.apache.solr.client.solrj.SolrRequest;
 import org.apache.solr.client.solrj.SolrServerException;
-import org.apache.solr.client.solrj.impl.BaseHttpSolrClient.RemoteExecutionException;
 import org.apache.solr.client.solrj.impl.HttpSolrClient;
 import org.apache.solr.client.solrj.request.V2Request;
 import org.apache.solr.client.solrj.response.SimpleSolrResponse;
@@ -93,7 +93,7 @@ public class TestDistribFileStore extends SolrCloudTestCase {
             "/package/mypkg/v1.0/runtimelibs.jar",
             "j+Rflxi64tXdqosIhbusqi6GTwZq8znunC/dzwcWW0/dHlFGKDurOaE1Nz9FSPJuXbHkVLj638yZ0Lp1ssnoYA==");
         fail("should have failed because of wrong signature ");
-      } catch (RemoteExecutionException e) {
+      } catch (RemoteSolrException e) {
         assertThat(e.getMessage(), containsString("Signature does not match"));
       }
 

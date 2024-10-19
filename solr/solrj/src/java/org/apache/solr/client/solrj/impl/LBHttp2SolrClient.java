@@ -244,7 +244,7 @@ public class LBHttp2SolrClient extends LBSolrClient {
       RetryListener listener) {
     try {
       throw (Exception) oe;
-    } catch (BaseHttpSolrClient.RemoteExecutionException e) {
+    } catch (RemoteSolrException e) {
       listener.onFailure(e, false);
     } catch (SolrException e) {
       // we retry on 404 or 403 or 503 or 500

@@ -239,7 +239,7 @@ public abstract class HttpSolrClientBase extends SolrClient {
       if (error != null
           && (String.valueOf(getObjectByPath(error, true, errPath))
               .endsWith("ExceptionWithErrObject"))) {
-        throw BaseHttpSolrClient.RemoteExecutionException.create(urlExceptionMessage, rsp);
+        throw RemoteSolrException.create(urlExceptionMessage, rsp);
       }
       if (httpStatus != 200 && !isV2Api) {
         NamedList<String> metadata = null;

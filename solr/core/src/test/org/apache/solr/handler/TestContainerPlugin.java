@@ -39,7 +39,7 @@ import org.apache.solr.api.ConfigurablePlugin;
 import org.apache.solr.api.ContainerPluginsRegistry;
 import org.apache.solr.api.EndPoint;
 import org.apache.solr.client.solrj.SolrClient;
-import org.apache.solr.client.solrj.impl.BaseHttpSolrClient.RemoteExecutionException;
+import org.apache.solr.client.solrj.SolrClient.RemoteSolrException;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest;
 import org.apache.solr.client.solrj.request.V2Request;
 import org.apache.solr.client.solrj.request.beans.PackagePayload;
@@ -211,10 +211,9 @@ public class TestContainerPlugin extends SolrCloudTestCase {
 
     version = phaser.awaitAdvanceInterruptibly(version, 10, TimeUnit.SECONDS);
 
-    RemoteExecutionException e =
+    RemoteSolrException e =
         assertThrows(
-            RemoteExecutionException.class,
-            () -> getPlugin("/my-random-prefix/their/plugin").call());
+            RemoteSolrException.class, () -> getPlugin("/my-random-prefix/their/plugin").call());
     assertEquals(404, e.code());
     final String msg = (String) ((Map<String, Object>) (e.getMetaData().get("error"))).get("msg");
     assertThat(msg, containsString("Cannot find API for the path"));
@@ -585,8 +584,7 @@ public class TestContainerPlugin extends SolrCloudTestCase {
 
   private static void expectError(
       V2Request req, SolrClient client, String errPath, String expectErrorMsg) {
-    RemoteExecutionException e =
-        expectThrows(RemoteExecutionException.class, () -> req.process(client));
+    RemoteSolrException e = expectThrows(RemoteSolrException.class, () -> req.process(client));
     String msg = e.getMetaData()._getStr(errPath, "");
     assertTrue(expectErrorMsg, msg.contains(expectErrorMsg));
   }

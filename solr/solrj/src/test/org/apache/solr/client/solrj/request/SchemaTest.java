@@ -32,7 +32,7 @@ import java.util.SortedMap;
 import java.util.TreeMap;
 import org.apache.commons.io.FileUtils;
 import org.apache.solr.client.solrj.SolrClient;
-import org.apache.solr.client.solrj.impl.BaseHttpSolrClient;
+import org.apache.solr.client.solrj.SolrClient.RemoteSolrException;
 import org.apache.solr.client.solrj.request.schema.AnalyzerDefinition;
 import org.apache.solr.client.solrj.request.schema.FieldTypeDefinition;
 import org.apache.solr.client.solrj.request.schema.SchemaRequest;
@@ -64,8 +64,7 @@ public class SchemaTest extends RestTestBase {
 
   private static void assertFailedSchemaResponse(
       ThrowingRunnable runnable, String expectedErrorMessage) {
-    BaseHttpSolrClient.RemoteExecutionException e =
-        expectThrows(BaseHttpSolrClient.RemoteExecutionException.class, runnable);
+    RemoteSolrException e = expectThrows(RemoteSolrException.class, runnable);
     SimpleOrderedMap<?> errorMap = (SimpleOrderedMap<?>) e.getMetaData().get("error");
     assertEquals(
         "org.apache.solr.api.ApiBag$ExceptionWithErrObject",
