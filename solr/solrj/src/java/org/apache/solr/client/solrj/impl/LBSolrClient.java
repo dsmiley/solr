@@ -491,9 +491,12 @@ public abstract class LBSolrClient extends SolrClient {
       if (isZombie) {
         zombieServers.remove(baseUrl.toString());
       }
-    } catch (RemoteSolrException e) {
-      throw e;
     } catch (SolrException e) {
+      // nocommit why does this case matter; why can't we treat it like SolrException?
+      if (e instanceof RemoteSolrException) {
+        if (((RemoteSolrException)e).getMetaData() != null)
+          throw e;
+      }
       // we retry on 404 or 403 or 503 or 500
       // unless it's an update - then we only retry on connect exception
       if (!isNonRetryable && RETRY_CODES.contains(e.code())) {

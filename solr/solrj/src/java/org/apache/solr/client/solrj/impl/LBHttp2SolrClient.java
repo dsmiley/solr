@@ -242,10 +242,15 @@ public class LBHttp2SolrClient extends LBSolrClient {
       boolean isNonRetryable,
       boolean isZombie,
       RetryListener listener) {
+    // nocommit why does this case matter; why can't we treat it like SolrException?
+    if (oe instanceof RemoteSolrException) {
+      final var rse = (RemoteSolrException) oe;
+      if (rse.getMetaData() != null)
+        listener.onFailure(rse, false);
+      return;
+    }
     try {
       throw (Exception) oe;
-    } catch (RemoteSolrException e) {
-      listener.onFailure(e, false);
     } catch (SolrException e) {
       // we retry on 404 or 403 or 503 or 500
       // unless it's an update - then we only retry on connect exception
