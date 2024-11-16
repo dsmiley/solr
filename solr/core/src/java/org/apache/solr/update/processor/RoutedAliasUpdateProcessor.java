@@ -266,13 +266,13 @@ public class RoutedAliasUpdateProcessor extends UpdateRequestProcessor {
   }
 
   private SolrCmdDistributor.Node lookupShardLeaderOfCollection(String collection) {
-    final Slice[] activeSlices =
-        zkController.getClusterState().getCollection(collection).getActiveSlicesArr();
-    if (activeSlices.length == 0) {
+    final List<Slice> activeSlices =
+        zkController.getClusterState().getCollection(collection).getActiveSlices();
+    if (activeSlices.isEmpty()) {
       throw new SolrException(
           SolrException.ErrorCode.SERVICE_UNAVAILABLE, "Cannot route to collection " + collection);
     }
-    final Slice slice = activeSlices[0];
+    final Slice slice = activeSlices.getFirst();
     return getLeaderNode(collection, slice);
   }
 

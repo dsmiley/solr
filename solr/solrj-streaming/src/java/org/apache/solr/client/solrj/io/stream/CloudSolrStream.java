@@ -368,7 +368,7 @@ public class CloudSolrStream extends TupleStream implements Expressible {
         allCollections
             .map(c -> clusterState.getCollectionOrNull(c, true))
             .filter(Objects::nonNull)
-            .flatMap(docCol -> Arrays.stream(docCol.getActiveSlicesArr()))
+            .flatMap(docCol -> docCol.getActiveSlices().stream())
             .toArray(Slice[]::new);
     if (slices.length == 0) {
       throw new IOException("Slices not found for " + collectionName);

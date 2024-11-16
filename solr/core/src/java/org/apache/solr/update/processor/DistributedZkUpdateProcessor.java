@@ -987,9 +987,8 @@ public class DistributedZkUpdateProcessor extends DistributedUpdateProcessor {
           for (Map.Entry<String, RoutingRule> entry : routingRules.entrySet()) {
             String targetCollectionName = entry.getValue().getTargetCollectionName();
             final DocCollection docCollection = cstate.getCollectionOrNull(targetCollectionName);
-            if (docCollection != null && docCollection.getActiveSlicesArr().length > 0) {
-              final Slice[] activeSlices = docCollection.getActiveSlicesArr();
-              Slice any = activeSlices[0];
+            if (docCollection != null && docCollection.getActiveSlices().isEmpty() == false) {
+              Slice any = docCollection.getActiveSlices().getFirst();
               if (nodes == null) nodes = new ArrayList<>();
               nodes.add(new SolrCmdDistributor.StdNode(new ZkCoreNodeProps(any.getLeader())));
             }

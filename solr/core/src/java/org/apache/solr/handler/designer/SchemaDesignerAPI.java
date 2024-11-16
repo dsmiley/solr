@@ -1133,10 +1133,9 @@ public class SchemaDesignerAPI implements SchemaDesignerConstants {
     Map<String, Object> response = new HashMap<>();
 
     DocCollection coll = zkStateReader().getCollection(mutableId);
-    if (coll.getActiveSlicesArr().length > 0) {
-      String coreName = coll.getActiveSlicesArr()[0].getLeader().getCoreName();
-      response.put("core", coreName);
-    }
+    coll.getActiveSlices().stream()
+        .findAny()
+        .ifPresent(slice -> response.put("core", slice.getLeader().getCoreName()));
 
     response.put(UNIQUE_KEY_FIELD_PARAM, schema.getUniqueKeyField().getName());
 

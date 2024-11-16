@@ -40,7 +40,6 @@ import java.io.OutputStream;
 import java.lang.invoke.MethodHandles;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Enumeration;
@@ -1055,17 +1054,17 @@ public class HttpSolrCall {
     Set<String> liveNodes = clusterState.getLiveNodes();
 
     if (isPreferLeader) {
-      List<Replica> leaderReplicas =
+      var leaderReplicas =
           collection.getLeaderReplicas(cores.getZkController().getNodeName());
       SolrCore core = randomlyGetSolrCore(liveNodes, leaderReplicas);
       if (core != null) return core;
     }
 
-    List<Replica> replicas = collection.getReplicas(cores.getZkController().getNodeName());
+    var replicas = collection.getReplicas(cores.getZkController().getNodeName());
     return randomlyGetSolrCore(liveNodes, replicas);
   }
 
-  private SolrCore randomlyGetSolrCore(Set<String> liveNodes, List<Replica> replicas) {
+  private SolrCore randomlyGetSolrCore(Set<String> liveNodes, Collection<Replica> replicas) {
     if (replicas != null) {
       RandomIterator<Replica> it = new RandomIterator<>(Utils.RANDOM, replicas);
       while (it.hasNext()) {
@@ -1095,7 +1094,7 @@ public class HttpSolrCall {
     if (activeSlices) {
       return clusterState
           .collectionStream()
-          .flatMap(coll -> Arrays.stream(coll.getActiveSlicesArr()))
+          .flatMap(coll -> coll.getActiveSlices().stream())
           .toList();
     } else {
       return clusterState.collectionStream().flatMap(coll -> coll.getSlices().stream()).toList();
@@ -1106,13 +1105,10 @@ public class HttpSolrCall {
       throws SolrException {
     ClusterState clusterState = cores.getZkController().getClusterState();
     final DocCollection docCollection = clusterState.getCollectionOrNull(collectionName);
-    Slice[] slices = (docCollection != null) ? docCollection.getActiveSlicesArr() : null;
-    List<Slice> activeSlices;
     boolean byCoreName = false;
-
     int totalReplicas = 0;
-
-    if (slices == null) {
+    List<Slice> activeSlices;
+    if (docCollection == null) {
       byCoreName = true;
       // all collections!
       activeSlices = getSlicesForAllCollections(clusterState, true);
@@ -1120,7 +1116,7 @@ public class HttpSolrCall {
         activeSlices = getSlicesForAllCollections(clusterState, false);
       }
     } else {
-      activeSlices = List.of(slices);
+      activeSlices = docCollection.getActiveSlices();
     }
 
     for (Slice s : activeSlices) {
