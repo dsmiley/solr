@@ -603,9 +603,9 @@ public abstract class BaseDistributedSearchTestCase extends SolrTestCaseJ4 {
 
   String qt = params.get("qt");
   if (qt != null) {
-    params.remove("qt"); // Remove "qt" from params
+    params.remove("qt");
     org.apache.solr.client.solrj.request.QueryRequest queryRequest = new org.apache.solr.client.solrj.request.QueryRequest(params);
-    queryRequest.setPath(qt); // Set path on QueryRequest
+    queryRequest.setPath(qt);
     rsp = queryRequest.process(client);
   } else {
     rsp = client.query(params);

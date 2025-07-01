@@ -220,7 +220,7 @@ public class TestCrossCoreJoin extends SolrTestCaseJ4 {
   }
 
   public String query(SolrCore core, SolrQueryRequest req) throws Exception {
-    String handler = req.getPath(); // Get path from SolrQueryRequest
+    String handler = req.getPath();
     if (req.getParams().get("wt") == null) {
       ModifiableSolrParams params = new ModifiableSolrParams(req.getParams());
       params.set("wt", "xml");
@@ -229,7 +229,7 @@ public class TestCrossCoreJoin extends SolrTestCaseJ4 {
     SolrQueryResponse rsp = new SolrQueryResponse();
     SolrRequestInfo.setRequestInfo(new SolrRequestInfo(req, rsp));
     try {
-      core.execute(core.getRequestHandler(handler), req, rsp); // Pass handler (path) to getRequestHandler
+      core.execute(core.getRequestHandler(handler), req, rsp);
       if (rsp.getException() != null) {
         throw rsp.getException();
       }
