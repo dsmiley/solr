@@ -599,7 +599,17 @@ public abstract class BaseDistributedSearchTestCase extends SolrTestCaseJ4 {
     // query a random server
     int which = r.nextInt(clients.size());
     SolrClient client = clients.get(which);
-    QueryResponse rsp = client.query(params);
+  QueryResponse rsp;
+
+  String qt = params.get("qt");
+  if (qt != null) {
+    params.remove("qt"); // Remove "qt" from params
+    org.apache.solr.client.solrj.request.QueryRequest queryRequest = new org.apache.solr.client.solrj.request.QueryRequest(params);
+    queryRequest.setPath(qt); // Set path on QueryRequest
+    rsp = queryRequest.process(client);
+  } else {
+    rsp = client.query(params);
+  }
     return rsp;
   }
 
