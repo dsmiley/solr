@@ -201,8 +201,10 @@ public class TestReplicationHandler extends SolrTestCaseJ4 {
     ModifiableSolrParams params = new ModifiableSolrParams();
     params.set("command", "details");
     params.set("_trace", "getDetails");
-    params.set("qt", ReplicationHandler.PATH);
-    QueryRequest req = new QueryRequest(params);
+    // qt is set as path in GenericSolrRequest constructor
+    GenericSolrRequest req =
+        new GenericSolrRequest(
+            SolrRequest.METHOD.GET, ReplicationHandler.PATH, params);
 
     NamedList<Object> res = s.request(req);
     assertReplicationResponseSucceeded(res);
@@ -220,8 +222,10 @@ public class TestReplicationHandler extends SolrTestCaseJ4 {
     ModifiableSolrParams params = new ModifiableSolrParams();
     params.set("command", "indexversion");
     params.set("_trace", "getIndexVersion");
-    params.set("qt", ReplicationHandler.PATH);
-    QueryRequest req = new QueryRequest(params);
+    // qt is set as path in GenericSolrRequest constructor
+    GenericSolrRequest req =
+        new GenericSolrRequest(
+            SolrRequest.METHOD.GET, ReplicationHandler.PATH, params);
 
     NamedList<Object> res = s.request(req);
     assertReplicationResponseSucceeded(res);
@@ -234,8 +238,9 @@ public class TestReplicationHandler extends SolrTestCaseJ4 {
     ModifiableSolrParams params = new ModifiableSolrParams();
     params.set("action", "reload");
     params.set("core", core);
-    params.set("qt", "/admin/cores");
-    QueryRequest req = new QueryRequest(params);
+    // qt is set as path in GenericSolrRequest constructor
+    GenericSolrRequest req =
+        new GenericSolrRequest(SolrRequest.METHOD.GET, "/admin/cores", params);
 
     try (SolrClient adminClient = adminClient(jettySolrRunner)) {
       NamedList<Object> res = adminClient.request(req);

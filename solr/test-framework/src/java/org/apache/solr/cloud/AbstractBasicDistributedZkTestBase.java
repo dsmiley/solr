@@ -1144,8 +1144,8 @@ public abstract class AbstractBasicDistributedZkTestBase extends AbstractFullDis
     }
     params.set("name", collectionName);
     params.set("collection.configName", configSetName);
-    QueryRequest request = new QueryRequest(params);
-    request.setPath("/admin/collections");
+    GenericSolrRequest request =
+        new GenericSolrRequest(METHOD.GET, "/admin/collections", params);
 
     CollectionAdminResponse res = new CollectionAdminResponse();
     if (client == null) {

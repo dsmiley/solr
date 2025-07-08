@@ -36,6 +36,7 @@ import java.util.stream.Stream;
 import org.apache.solr.client.solrj.SolrResponse;
 import org.apache.solr.client.solrj.cloud.DistribStateManager;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest;
+import org.apache.solr.client.solrj.request.GenericSolrRequest;
 import org.apache.solr.client.solrj.request.QueryRequest;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.cloud.DistributedClusterStateUpdater;
@@ -856,12 +857,14 @@ public class ReindexCollectionCmd implements CollApiCmds.CollectionApiCommand {
     final var solrClient = ccc.getCoreContainer().getDefaultHttpSolrClient();
 
     final var solrParams = new ModifiableSolrParams();
-    solrParams.set(CommonParams.QT, "/stream");
+    // CommonParams.QT is set as path in GenericSolrRequest constructor
     solrParams.set("action", action);
     solrParams.set(CommonParams.ID, daemonName);
     solrParams.set(CommonParams.DISTRIB, false);
 
-    final var req = new QueryRequest(solrParams);
+    final var req =
+        new GenericSolrRequest(
+            org.apache.solr.client.solrj.SolrRequest.METHOD.GET, "/stream", solrParams);
     final var solrResponse =
         solrClient.requestWithBaseUrl(daemonReplica.getBaseUrl(), daemonReplica.getCoreName(), req);
     return solrResponse.getResponse();

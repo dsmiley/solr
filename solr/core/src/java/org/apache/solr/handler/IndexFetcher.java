@@ -93,7 +93,7 @@ import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.impl.Http2SolrClient;
 import org.apache.solr.client.solrj.impl.HttpClientUtil;
 import org.apache.solr.client.solrj.impl.InputStreamResponseParser;
-import org.apache.solr.client.solrj.request.QueryRequest;
+import org.apache.solr.client.solrj.request.GenericSolrRequest;
 import org.apache.solr.cloud.CloudDescriptor;
 import org.apache.solr.cloud.ZkController;
 import org.apache.solr.common.SolrException;
@@ -345,8 +345,10 @@ public class IndexFetcher {
     ModifiableSolrParams params = new ModifiableSolrParams();
     params.set(COMMAND, CMD_INDEX_VERSION);
     params.set(CommonParams.WT, JAVABIN);
-    params.set(CommonParams.QT, ReplicationHandler.PATH);
-    QueryRequest req = new QueryRequest(params);
+    // CommonParams.QT is set as path in GenericSolrRequest constructor
+    GenericSolrRequest req =
+        new GenericSolrRequest(
+            org.apache.solr.client.solrj.SolrRequest.METHOD.GET, ReplicationHandler.PATH, params);
     try {
       return solrClient.requestWithBaseUrl(leaderBaseUrl, leaderCoreName, req).getResponse();
     } catch (SolrServerException e) {
@@ -364,8 +366,10 @@ public class IndexFetcher {
     params.set(COMMAND, CMD_GET_FILE_LIST);
     params.set(GENERATION, String.valueOf(gen));
     params.set(CommonParams.WT, JAVABIN);
-    params.set(CommonParams.QT, ReplicationHandler.PATH);
-    QueryRequest req = new QueryRequest(params);
+    // CommonParams.QT is set as path in GenericSolrRequest constructor
+    GenericSolrRequest req =
+        new GenericSolrRequest(
+            org.apache.solr.client.solrj.SolrRequest.METHOD.GET, ReplicationHandler.PATH, params);
     try {
       NamedList<?> response =
           solrClient.requestWithBaseUrl(leaderBaseUrl, leaderCoreName, req).getResponse();
@@ -1876,7 +1880,7 @@ public class IndexFetcher {
       // the method is command=filecontent
       params.set(COMMAND, CMD_GET_FILE);
       params.set(GENERATION, Long.toString(indexGen));
-      params.set(CommonParams.QT, ReplicationHandler.PATH);
+      // CommonParams.QT is set as path in GenericSolrRequest constructor
       // add the version to download. This is used to reserve the download
       params.set(solrParamOutput, fileName);
       if (useInternalCompression) {
@@ -1898,7 +1902,11 @@ public class IndexFetcher {
       InputStream is = null;
       // TODO use shardhandler
       try {
-        QueryRequest req = new QueryRequest(params);
+        GenericSolrRequest req =
+            new GenericSolrRequest(
+                org.apache.solr.client.solrj.SolrRequest.METHOD.GET,
+                ReplicationHandler.PATH,
+                params);
         req.setResponseParser(new InputStreamResponseParser(FILE_STREAM));
         if (useExternalCompression) req.addHeader("Accept-Encoding", "gzip");
         response = solrClient.requestWithBaseUrl(leaderBaseUrl, leaderCoreName, req).getResponse();
@@ -2042,9 +2050,11 @@ public class IndexFetcher {
     ModifiableSolrParams params = new ModifiableSolrParams();
     params.set(COMMAND, CMD_DETAILS);
     params.set("follower", false);
-    params.set(CommonParams.QT, ReplicationHandler.PATH);
+    // CommonParams.QT is set as path in GenericSolrRequest constructor
 
-    QueryRequest request = new QueryRequest(params);
+    GenericSolrRequest request =
+        new GenericSolrRequest(
+            org.apache.solr.client.solrj.SolrRequest.METHOD.GET, ReplicationHandler.PATH, params);
     // TODO use shardhandler
     return solrClient.requestWithBaseUrl(leaderBaseUrl, leaderCoreName, request).getResponse();
   }

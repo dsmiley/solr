@@ -33,6 +33,7 @@ import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.cloud.SocketProxy;
 import org.apache.solr.client.solrj.impl.HttpSolrClient;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest;
+import org.apache.solr.client.solrj.request.GenericSolrRequest;
 import org.apache.solr.client.solrj.request.QueryRequest;
 import org.apache.solr.common.SolrInputDocument;
 import org.apache.solr.common.cloud.Replica;
@@ -343,7 +344,11 @@ public class TestCloudConsistency extends SolrCloudTestCase {
 
   private NamedList<Object> realTimeGetDocId(SolrClient solr, String docId)
       throws SolrServerException, IOException {
-    QueryRequest qr = new QueryRequest(params("qt", "/get", "id", docId, "distrib", "false"));
+    GenericSolrRequest qr =
+        new GenericSolrRequest(
+            org.apache.solr.client.solrj.SolrRequest.METHOD.GET,
+            "/get",
+            params("id", docId, "distrib", "false"));
     return solr.request(qr);
   }
 
