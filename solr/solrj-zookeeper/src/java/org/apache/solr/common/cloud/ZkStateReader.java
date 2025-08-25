@@ -19,6 +19,7 @@ package org.apache.solr.common.cloud;
 import static java.util.Collections.emptyMap;
 import static java.util.Collections.emptySortedSet;
 
+import java.io.IOException;
 import java.lang.invoke.MethodHandles;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -31,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
@@ -46,8 +48,14 @@ import java.util.function.BiFunction;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
+import org.apache.solr.client.api.util.SolrVersion;
+import org.apache.solr.client.solrj.SolrClient;
+import org.apache.solr.client.solrj.SolrRequest;
+import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.impl.CloudSolrClient;
+import org.apache.solr.client.solrj.impl.HttpSolrClient;
 import org.apache.solr.client.solrj.impl.ZkClientClusterStateProvider;
+import org.apache.solr.client.solrj.request.GenericSolrRequest;
 import org.apache.solr.common.AlreadyClosedException;
 import org.apache.solr.common.SolrCloseable;
 import org.apache.solr.common.SolrException;
@@ -2149,6 +2157,75 @@ public class ZkStateReader implements SolrCloseable {
         removeDocCollectionWatcher(collectionName, this);
       }
       return result;
+    }
+  }
+
+  /**
+   * Fetches the lowest Solr version among all live nodes in the cluster.
+   * This method does not factor in the current node's SolrVersion, allowing
+   * the caller to choose whether to consider the current version or not.
+   *
+   * @return Optional containing the lowest SolrVersion found among live nodes,
+   *         or empty if no version information could be retrieved
+   * @throws InterruptedException if the thread is interrupted while fetching version information
+   */
+  public Optional<SolrVersion> fetchLowestSolrVersion() throws InterruptedException {
+    Set<String> liveNodes = this.liveNodes; // volatile read
+    if (liveNodes.isEmpty()) {
+      return Optional.empty();
+    }
+
+    List<SolrVersion> versions = new ArrayList<>();
+    String urlScheme = getClusterProperty(URL_SCHEME, "http");
+    
+    for (String nodeName : liveNodes) {
+      try {
+        String baseUrl = Utils.getBaseUrlForNodeName(nodeName, urlScheme, false);
+        SolrVersion nodeVersion = fetchNodeVersion(baseUrl);
+        if (nodeVersion != null) {
+          versions.add(nodeVersion);
+        }
+      } catch (Exception e) {
+        // Log warning but continue with other nodes
+        log.warn("Failed to fetch version from node {}: {}", nodeName, e.getMessage());
+      }
+    }
+    
+    if (versions.isEmpty()) {
+      return Optional.empty();
+    }
+    
+    // Find the minimum version
+    return versions.stream().min(SolrVersion::compareTo);
+  }
+
+  /**
+   * Fetches the Solr version from a specific node's admin API.
+   */
+  private SolrVersion fetchNodeVersion(String baseUrl) throws IOException, SolrServerException {
+    try (HttpSolrClient client = new HttpSolrClient.Builder(baseUrl)
+        .withConnectionTimeout(5000)
+        .withSocketTimeout(10000)
+        .build()) {
+      
+      GenericSolrRequest request = new GenericSolrRequest(SolrRequest.METHOD.GET, "/admin/info/system");
+      @SuppressWarnings("unchecked")
+      Map<String, Object> response = (Map<String, Object>) client.request(request).get("response");
+      
+      @SuppressWarnings("unchecked")
+      Map<String, Object> luceneInfo = (Map<String, Object>) response.get("lucene");
+      if (luceneInfo != null) {
+        String specVersion = (String) luceneInfo.get("solr-spec-version");
+        if (specVersion != null && !specVersion.trim().isEmpty()) {
+          try {
+            return SolrVersion.valueOf(specVersion.trim());
+          } catch (Exception e) {
+            log.warn("Failed to parse Solr version '{}' from node {}: {}", specVersion, baseUrl, e.getMessage());
+          }
+        }
+      }
+      
+      return null;
     }
   }
 
