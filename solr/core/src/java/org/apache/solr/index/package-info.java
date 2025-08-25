@@ -15,5 +15,24 @@
  * limitations under the License.
  */
 
-/** Indexing related classes. */
+/**
+ * Index management and configuration classes for Solr's interaction with Lucene indexes.
+ *
+ * <p>This package provides factories and utilities for managing Lucene index behavior within Solr,
+ * including:
+ *
+ * <ul>
+ *   <li>{@link org.apache.solr.index.MergePolicyFactory} and its implementations for configuring
+ *       how index segments are merged
+ *   <li>{@link org.apache.solr.index.SlowCompositeReaderWrapper} for wrapping composite readers as
+ *       leaf readers when needed
+ *   <li>Various merge policy factory implementations like {@link
+ *       org.apache.solr.index.TieredMergePolicyFactory} and {@link
+ *       org.apache.solr.index.LogByteSizeMergePolicyFactory}
+ * </ul>
+ *
+ * <p>These classes provide Solr-specific wrappers and extensions around Lucene's core indexing
+ * functionality, allowing for configuration and customization of index behavior through Solr's
+ * configuration system.
+ */
 package org.apache.solr.index;
