@@ -165,6 +165,9 @@ public class ZkController implements Closeable {
 
   public static final byte[] TOUCHED_ZNODE_DATA = "{}".getBytes(StandardCharsets.UTF_8);
 
+  /** @see #getClusterLowestVersionAtStartup() */
+  private Optional<SolrVersion> clusterLowestVersionAtStartup;
+
   static class ContextKey {
 
     private final String collection;
@@ -300,7 +303,7 @@ public class ZkController implements Closeable {
       String zkServerAddress,
       int zkClientConnectTimeout,
       CloudConfig cloudConfig)
-      throws InterruptedException, TimeoutException, IOException {
+      throws InterruptedException, TimeoutException, IOException, KeeperException {
 
     if (cc == null) throw new IllegalArgumentException("CoreContainer cannot be null.");
     this.cc = cc;
@@ -387,7 +390,11 @@ public class ZkController implements Closeable {
     Boolean overseerEnabled =
         zkStateReader.getClusterProperty(ZkStateReader.OVERSEER_ENABLED, null);
     if (overseerEnabled == null) {
-      overseerEnabled = EnvUtils.getPropertyAsBool("solr.cloud.overseer.enabled", true);
+      var solrVersion = getClusterLowestVersionAtStartup().orElse(SolrVersion.LATEST);
+      overseerEnabled =
+          EnvUtils.getPropertyAsBool(
+              "solr.cloud.overseer.enabled",
+              !solrVersion.greaterThanOrEqualTo(SolrVersion.forIntegers(10, 0, 0)));
     }
     if (overseerEnabled) {
       log.info("The Overseer is enabled.  It will process all cluster commands & state updates.");
@@ -619,7 +626,7 @@ public class ZkController implements Closeable {
    * uses live nodes.
    */
   private void checkClusterVersionCompatibility() throws InterruptedException, KeeperException {
-    Optional<SolrVersion> lowestVersion = zkStateReader.fetchLowestSolrVersion();
+    Optional<SolrVersion> lowestVersion = getClusterLowestVersionAtStartup();
     if (lowestVersion.isPresent()) {
       SolrVersion ourVersion = SolrVersion.LATEST;
       SolrVersion clusterVersion = lowestVersion.get();
@@ -658,6 +665,14 @@ public class ZkController implements Closeable {
         }
       }
     }
+  }
+
+  /** @see ZkStateReader#fetchLowestSolrVersion() */
+  private synchronized Optional<SolrVersion> getClusterLowestVersionAtStartup() throws KeeperException, InterruptedException {
+    if (clusterLowestVersionAtStartup == null) {
+      clusterLowestVersionAtStartup = zkStateReader.fetchLowestSolrVersion();
+    }
+    return clusterLowestVersionAtStartup;
   }
 
   public CloudSolrClient getSolrClient() {
