@@ -222,10 +222,12 @@ public class ZkController implements Closeable {
 
   private final CloudConfig cloudConfig;
   private final NodesSysPropsCacher sysPropsCacher;
+  
+  private boolean overseerEnabled; // Will be set during init() after cluster properties are available
 
-  private final DistributedClusterStateUpdater distributedClusterStateUpdater;
+  private DistributedClusterStateUpdater distributedClusterStateUpdater = new DistributedClusterStateUpdater(false); // Default to overseer enabled, will be updated in init()
 
-  private final Optional<DistributedCollectionConfigSetCommandRunner> distributedCommandRunner;
+  private Optional<DistributedCollectionConfigSetCommandRunner> distributedCommandRunner;
 
   private LeaderElector overseerElector;
 
@@ -382,26 +384,13 @@ public class ZkController implements Closeable {
               if (cc != null) cc.securityNodeChanged();
             });
 
-    // Now that zkStateReader is available, read OVERSEER_ENABLED.
-    // When overseerEnabled is false, both distributed features should be enabled
-    Boolean overseerEnabled =
-        zkStateReader.getClusterProperty(ZkStateReader.OVERSEER_ENABLED, null);
-    if (overseerEnabled == null) {
-      overseerEnabled = EnvUtils.getPropertyAsBool("solr.cloud.overseer.enabled", true);
-    }
-    if (overseerEnabled) {
-      log.info("The Overseer is enabled.  It will process all cluster commands & state updates.");
-    } else {
-      log.info(
-          "The Overseer is disabled.  Cluster commands & state updates will happen on any/all nodes.");
-    }
-    this.distributedClusterStateUpdater = new DistributedClusterStateUpdater(!overseerEnabled);
+    init();
+
+    // Initialize distributed command runner now that overseerEnabled has been determined
     this.distributedCommandRunner =
         !overseerEnabled
             ? Optional.of(new DistributedCollectionConfigSetCommandRunner(cc, zkClient))
             : Optional.empty();
-
-    init();
 
     if (distributedClusterStateUpdater.isDistributedStateUpdate()) {
       this.overseerJobQueue = null;
@@ -1074,6 +1063,25 @@ public class ZkController implements Closeable {
       // note: Can't read cluster properties until createClusterState ^ is called
       final String urlSchemeFromClusterProp =
           zkStateReader.getClusterProperty(ZkStateReader.URL_SCHEME, ZkStateReader.HTTP);
+
+      // Now that zkStateReader is available, read OVERSEER_ENABLED.
+      // When overseerEnabled is false, both distributed features should be enabled
+      String overseerEnabledFromCluster =
+          zkStateReader.getClusterProperty(ZkStateReader.OVERSEER_ENABLED, null);
+      if (overseerEnabledFromCluster == null) {
+        this.overseerEnabled = EnvUtils.getPropertyAsBool("solr.cloud.overseer.enabled", true);
+      } else {
+        this.overseerEnabled = Boolean.parseBoolean(overseerEnabledFromCluster);
+      }
+      if (overseerEnabled) {
+        log.info("The Overseer is enabled.  It will process all cluster commands & state updates.");
+      } else {
+        log.info(
+            "The Overseer is disabled.  Cluster commands & state updates will happen on any/all nodes.");
+      }
+
+      // Update distributed components now that overseerEnabled has been determined
+      this.distributedClusterStateUpdater = new DistributedClusterStateUpdater(!overseerEnabled);
 
       // this must happen after zkStateReader has initialized the cluster props
       this.baseURL = Utils.getBaseUrlForNodeName(this.nodeName, urlSchemeFromClusterProp);
