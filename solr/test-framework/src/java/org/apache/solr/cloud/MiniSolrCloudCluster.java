@@ -57,8 +57,8 @@ import java.util.function.Consumer;
 import org.apache.lucene.tests.util.LuceneTestCase;
 import org.apache.solr.SolrTestCaseJ4;
 import org.apache.solr.client.solrj.embedded.SSLConfig;
-import org.apache.solr.client.solrj.impl.CloudLegacySolrClient;
 import org.apache.solr.client.solrj.impl.CloudSolrClient;
+import org.apache.solr.client.solrj.impl.Http2SolrClient;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest;
 import org.apache.solr.client.solrj.request.ConfigSetAdminRequest;
 import org.apache.solr.common.SolrException;
@@ -710,11 +710,13 @@ public class MiniSolrCloudCluster {
         collectionName,
         k -> {
           CloudSolrClient solrClient =
-              new CloudLegacySolrClient.Builder(
+              new CloudSolrClient.Builder(
                       Collections.singletonList(zkServer.getZkAddress()), Optional.empty())
                   .withDefaultCollection(collectionName)
-                  .withSocketTimeout(90000)
-                  .withConnectionTimeout(15000)
+                  .withInternalClientBuilder(
+                      new Http2SolrClient.Builder()
+                          .withRequestTimeout(90000, TimeUnit.MILLISECONDS)
+                          .withConnectionTimeout(15000, TimeUnit.MILLISECONDS))
                   .build();
 
           solrClient.connect();
@@ -747,10 +749,12 @@ public class MiniSolrCloudCluster {
   }
 
   protected CloudSolrClient buildSolrClient() {
-    return new CloudLegacySolrClient.Builder(
+    return new CloudSolrClient.Builder(
             Collections.singletonList(getZkServer().getZkAddress()), Optional.empty())
-        .withSocketTimeout(90000, TimeUnit.MILLISECONDS)
-        .withConnectionTimeout(15000, TimeUnit.MILLISECONDS)
+        .withInternalClientBuilder(
+            new Http2SolrClient.Builder()
+                .withRequestTimeout(90000, TimeUnit.MILLISECONDS)
+                .withConnectionTimeout(15000, TimeUnit.MILLISECONDS))
         .build(); // we choose 90 because we run in some harsh envs
   }
 
@@ -758,13 +762,16 @@ public class MiniSolrCloudCluster {
    * creates a basic CloudSolrClient Builder that then can be customized by callers, for example by
    * specifying what collection they want to use.
    *
-   * @return CloudLegacySolrClient.Builder
+   * @return CloudSolrClient.Builder
    */
-  public CloudLegacySolrClient.Builder basicSolrClientBuilder() {
-    return new CloudLegacySolrClient.Builder(
-            Collections.singletonList(getZkServer().getZkAddress()), Optional.empty())
-        .withSocketTimeout(90000) // we choose 90 because we run in some harsh envs
-        .withConnectionTimeout(15000);
+  public CloudSolrClient.Builder basicSolrClientBuilder() {
+    CloudSolrClient.Builder builder = new CloudSolrClient.Builder(
+            Collections.singletonList(getZkServer().getZkAddress()), Optional.empty());
+    builder.withInternalClientBuilder(
+            new Http2SolrClient.Builder()
+                .withRequestTimeout(90000, TimeUnit.MILLISECONDS) // we choose 90 because we run in some harsh envs
+                .withConnectionTimeout(15000, TimeUnit.MILLISECONDS));
+    return builder;
   }
 
   private Exception checkForExceptions(String message, Collection<Future<JettySolrRunner>> futures)
