@@ -82,7 +82,9 @@ import org.apache.lucene.tests.util.LuceneTestCase.SuppressFileSystems;
 import org.apache.lucene.tests.util.TestUtil;
 import org.apache.lucene.util.Constants;
 import org.apache.solr.client.solrj.impl.CloudHttp2SolrClient;
-import org.apache.solr.client.solrj.impl.CloudLegacySolrClient;
+import org.apache.solr.client.solrj.impl.CloudSolrClient;
+import org.apache.solr.client.solrj.impl.HttpClientUtil;
+import org.apache.solr.client.solrj.impl.HttpSolrClient;
 import org.apache.solr.client.solrj.impl.ClusterStateProvider;
 import org.apache.solr.client.solrj.impl.Http2SolrClient;
 import org.apache.solr.client.solrj.impl.HttpClientUtil;
@@ -2570,11 +2572,11 @@ public abstract class SolrTestCaseJ4 extends SolrTestCase {
   }
 
   /**
-   * A variant of {@link org.apache.solr.client.solrj.impl.CloudLegacySolrClient.Builder} that will
+   * A variant of {@link org.apache.solr.client.solrj.impl.CloudSolrClient.Builder} that will
    * randomize some internal settings.
    */
   @Deprecated
-  public static class RandomizingCloudSolrClientBuilder extends CloudLegacySolrClient.Builder {
+  public static class RandomizingCloudSolrClientBuilder extends CloudSolrClient.Builder {
 
     public RandomizingCloudSolrClientBuilder(List<String> zkHosts, Optional<String> zkChroot) {
       super(zkHosts, zkChroot);
@@ -2582,35 +2584,59 @@ public abstract class SolrTestCaseJ4 extends SolrTestCase {
     }
 
     public RandomizingCloudSolrClientBuilder(ClusterStateProvider stateProvider) {
-      this.stateProvider = stateProvider;
+      super(stateProvider);
       randomizeCloudSolrClient();
     }
 
     public RandomizingCloudSolrClientBuilder(MiniSolrCloudCluster cluster) {
-      if (random().nextBoolean()) {
-        this.zkHosts.add(cluster.getZkServer().getZkAddress());
-      } else {
-        populateSolrUrls(cluster);
-      }
-
+      super(buildSolrUrlsForCluster(cluster));
       randomizeCloudSolrClient();
     }
 
-    private void populateSolrUrls(MiniSolrCloudCluster cluster) {
+    private static List<String> buildSolrUrlsForCluster(MiniSolrCloudCluster cluster) {
+      List<String> solrUrls = new ArrayList<>();
       if (random().nextBoolean()) {
+        // Use ZK address - but we need solr URLs for the new constructor
+        // So let's always use Solr URLs approach
         final List<JettySolrRunner> solrNodes = cluster.getJettySolrRunners();
         for (JettySolrRunner node : solrNodes) {
-          this.solrUrls.add(node.getBaseUrl().toString());
+          solrUrls.add(node.getBaseUrl().toString());
         }
       } else {
-        this.solrUrls.add(cluster.getRandomJetty(random()).getBaseUrl().toString());
+        solrUrls.add(cluster.getRandomJetty(random()).getBaseUrl().toString());
       }
+      return solrUrls;
     }
 
     private void randomizeCloudSolrClient() {
       this.directUpdatesToLeadersOnly = random().nextBoolean();
       this.shardLeadersOnly = random().nextBoolean();
       this.parallelUpdates = random().nextBoolean();
+    }
+    
+    /** No-op method for compatibility with deprecated CloudLegacySolrClient.Builder */
+    @Deprecated 
+    public RandomizingCloudSolrClientBuilder sendUpdatesToAllReplicasInShard() {
+      // This was always a no-op in CloudLegacySolrClient.Builder
+      return this;
+    }
+    
+    /** Compatibility method for CloudLegacySolrClient.Builder API */
+    public RandomizingCloudSolrClientBuilder withConnectionTimeout(int connectionTimeoutMillis) {
+      if (internalClientBuilder == null) {
+        internalClientBuilder = new Http2SolrClient.Builder();
+      }
+      internalClientBuilder.withConnectionTimeout((long) connectionTimeoutMillis, TimeUnit.MILLISECONDS);
+      return this;
+    }
+    
+    /** Compatibility method for CloudLegacySolrClient.Builder API */
+    public RandomizingCloudSolrClientBuilder withSocketTimeout(int socketTimeoutMillis) {
+      if (internalClientBuilder == null) {
+        internalClientBuilder = new Http2SolrClient.Builder();
+      }
+      internalClientBuilder.withRequestTimeout((long) socketTimeoutMillis, TimeUnit.MILLISECONDS);
+      return this;
     }
   }
 
@@ -2627,30 +2653,30 @@ public abstract class SolrTestCaseJ4 extends SolrTestCase {
   }
 
   /**
-   * This method creates a basic HttpSolrClient. Tests that want to control the creation process
+   * This method creates a basic Http2SolrClient. Tests that want to control the creation process
    * should use the {@link org.apache.solr.client.solrj.impl.Http2SolrClient.Builder} class directly
    *
    * @param url the base URL for a Solr node. Should not contain a core or collection name.
    */
-  public static HttpSolrClient getHttpSolrClient(String url) {
-    return new HttpSolrClient.Builder(url).build();
+  public static Http2SolrClient getHttpSolrClient(String url) {
+    return new Http2SolrClient.Builder(url).build();
   }
 
-  /** Create a basic HttpSolrClient pointed at the specified replica */
-  public static HttpSolrClient getHttpSolrClient(Replica replica) {
+  /** Create a basic Http2SolrClient pointed at the specified replica */
+  public static Http2SolrClient getHttpSolrClient(Replica replica) {
     return getHttpSolrClient(replica.getBaseUrl(), replica.getCoreName());
   }
 
   /**
-   * This method creates a basic HttpSolrClient. Tests that want to control the creation process
+   * This method creates a basic Http2SolrClient. Tests that want to control the creation process
    * should use the {@link org.apache.solr.client.solrj.impl.Http2SolrClient.Builder} class directly
    *
    * @param url the base URL of a Solr node. Should <em>not</em> include a collection or core name.
    * @param defaultCoreName the name of a core that the created client should default to when making
    *     core-aware requests
    */
-  public static HttpSolrClient getHttpSolrClient(String url, String defaultCoreName) {
-    return new HttpSolrClient.Builder(url).withDefaultCollection(defaultCoreName).build();
+  public static Http2SolrClient getHttpSolrClient(String url, String defaultCoreName) {
+    return new Http2SolrClient.Builder(url).withDefaultCollection(defaultCoreName).build();
   }
 
   /**
