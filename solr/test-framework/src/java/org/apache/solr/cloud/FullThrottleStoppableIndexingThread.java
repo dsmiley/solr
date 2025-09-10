@@ -23,11 +23,12 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import org.apache.http.client.HttpClient;
 import org.apache.lucene.tests.util.LuceneTestCase;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.impl.CloudSolrClient;
 import org.apache.solr.client.solrj.impl.ConcurrentUpdateSolrClient;
+import org.apache.solr.client.solrj.impl.ConcurrentUpdateHttp2SolrClient;
+import org.apache.solr.client.solrj.impl.Http2SolrClient;
 import org.apache.solr.client.solrj.impl.HttpSolrClient;
 import org.apache.solr.common.SolrInputDocument;
 import org.slf4j.Logger;
@@ -38,16 +39,16 @@ class FullThrottleStoppableIndexingThread extends StoppableIndexingThread {
   private static final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
   /** */
-  private final HttpClient httpClient;
+  private final Http2SolrClient http2Client;
 
   private volatile boolean stop = false;
   int clientIndex = 0;
-  private ConcurrentUpdateSolrClient cusc;
+  private ConcurrentUpdateHttp2SolrClient cusc;
   private List<SolrClient> clients;
   private AtomicInteger fails = new AtomicInteger();
 
   public FullThrottleStoppableIndexingThread(
-      HttpClient httpClient,
+      Http2SolrClient http2Client,
       SolrClient controlClient,
       CloudSolrClient cloudClient,
       List<SolrClient> clients,
@@ -58,17 +59,14 @@ class FullThrottleStoppableIndexingThread extends StoppableIndexingThread {
     setName("FullThrottleStopableIndexingThread");
     setDaemon(true);
     this.clients = clients;
-    this.httpClient = httpClient;
+    this.http2Client = http2Client;
 
     cusc =
-        new ErrorLoggingConcurrentUpdateSolrClient.Builder(
-                ((HttpSolrClient) clients.get(0)).getBaseURL())
+        new ErrorLoggingConcurrentUpdateHttp2SolrClient.Builder(
+                ((Http2SolrClient) clients.get(0)).getBaseURL(), http2Client)
             .withDefaultCollection(clients.get(0).getDefaultCollection())
-            .withHttpClient(httpClient)
             .withQueueSize(8)
             .withThreadCount(2)
-            .withConnectionTimeout(10000, TimeUnit.MILLISECONDS)
-            .withSocketTimeout(clientSoTimeout, TimeUnit.MILLISECONDS)
             .build();
   }
 
@@ -126,10 +124,9 @@ class FullThrottleStoppableIndexingThread extends StoppableIndexingThread {
       }
       cusc.shutdownNow();
       cusc =
-          new ErrorLoggingConcurrentUpdateSolrClient.Builder(
-                  ((HttpSolrClient) clients.get(clientIndex)).getBaseURL())
+          new ErrorLoggingConcurrentUpdateHttp2SolrClient.Builder(
+                  ((Http2SolrClient) clients.get(clientIndex)).getBaseURL(), http2Client)
               .withDefaultCollection(clients.get(clientIndex).getDefaultCollection())
-              .withHttpClient(httpClient)
               .withQueueSize(30)
               .withThreadCount(3)
               .build();
@@ -182,6 +179,29 @@ class FullThrottleStoppableIndexingThread extends StoppableIndexingThread {
       @Override
       public ErrorLoggingConcurrentUpdateSolrClient build() {
         return new ErrorLoggingConcurrentUpdateSolrClient(this);
+      }
+    }
+  }
+
+  static class ErrorLoggingConcurrentUpdateHttp2SolrClient extends ConcurrentUpdateHttp2SolrClient {
+    public ErrorLoggingConcurrentUpdateHttp2SolrClient(Builder builder) {
+      super(builder);
+    }
+
+    @Override
+    public void handleError(Throwable ex) {
+      log.warn("cusc error", ex);
+    }
+
+    static class Builder extends ConcurrentUpdateHttp2SolrClient.Builder {
+
+      public Builder(String baseSolrUrl, Http2SolrClient client) {
+        super(baseSolrUrl, client);
+      }
+
+      @Override
+      public ErrorLoggingConcurrentUpdateHttp2SolrClient build() {
+        return new ErrorLoggingConcurrentUpdateHttp2SolrClient(this);
       }
     }
   }
