@@ -123,11 +123,6 @@ public abstract class SolrJettyTestBase extends SolrTestCaseJ4 {
         .build();
   }
 
-  // protected HttpClient getHttpClient() {
-  //   Http2SolrClient client = (Http2SolrClient) getSolrClient();
-  //   return client.getHttpClient();
-  // }
-
   // Sets up the necessary config files for Jetty. At least some tests require that the solrconfig
   // from the test file directory are used, but some also require that the solr.xml file be
   // explicitly there as of SOLR-4817

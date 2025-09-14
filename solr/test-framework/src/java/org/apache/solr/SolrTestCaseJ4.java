@@ -2575,7 +2575,6 @@ public abstract class SolrTestCaseJ4 extends SolrTestCase {
    * A variant of {@link org.apache.solr.client.solrj.impl.CloudSolrClient.Builder} that will
    * randomize some internal settings.
    */
-  @Deprecated
   public static class RandomizingCloudSolrClientBuilder extends CloudSolrClient.Builder {
 
     public RandomizingCloudSolrClientBuilder(List<String> zkHosts, Optional<String> zkChroot) {
@@ -2589,54 +2588,14 @@ public abstract class SolrTestCaseJ4 extends SolrTestCase {
     }
 
     public RandomizingCloudSolrClientBuilder(MiniSolrCloudCluster cluster) {
-      super(buildSolrUrlsForCluster(cluster));
+      super(Collections.singletonList(cluster.getZkServer().getZkAddress()), Optional.empty());
       randomizeCloudSolrClient();
-    }
-
-    private static List<String> buildSolrUrlsForCluster(MiniSolrCloudCluster cluster) {
-      List<String> solrUrls = new ArrayList<>();
-      if (random().nextBoolean()) {
-        // Use ZK address - but we need solr URLs for the new constructor
-        // So let's always use Solr URLs approach
-        final List<JettySolrRunner> solrNodes = cluster.getJettySolrRunners();
-        for (JettySolrRunner node : solrNodes) {
-          solrUrls.add(node.getBaseUrl().toString());
-        }
-      } else {
-        solrUrls.add(cluster.getRandomJetty(random()).getBaseUrl().toString());
-      }
-      return solrUrls;
     }
 
     private void randomizeCloudSolrClient() {
       this.directUpdatesToLeadersOnly = random().nextBoolean();
       this.shardLeadersOnly = random().nextBoolean();
       this.parallelUpdates = random().nextBoolean();
-    }
-    
-    /** No-op method for compatibility with deprecated CloudLegacySolrClient.Builder */
-    @Deprecated 
-    public RandomizingCloudSolrClientBuilder sendUpdatesToAllReplicasInShard() {
-      // This was always a no-op in CloudLegacySolrClient.Builder
-      return this;
-    }
-    
-    /** Compatibility method for CloudLegacySolrClient.Builder API */
-    public RandomizingCloudSolrClientBuilder withConnectionTimeout(int connectionTimeoutMillis) {
-      if (internalClientBuilder == null) {
-        internalClientBuilder = new Http2SolrClient.Builder();
-      }
-      internalClientBuilder.withConnectionTimeout((long) connectionTimeoutMillis, TimeUnit.MILLISECONDS);
-      return this;
-    }
-    
-    /** Compatibility method for CloudLegacySolrClient.Builder API */
-    public RandomizingCloudSolrClientBuilder withSocketTimeout(int socketTimeoutMillis) {
-      if (internalClientBuilder == null) {
-        internalClientBuilder = new Http2SolrClient.Builder();
-      }
-      internalClientBuilder.withRequestTimeout((long) socketTimeoutMillis, TimeUnit.MILLISECONDS);
-      return this;
     }
   }
 

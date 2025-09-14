@@ -2167,15 +2167,16 @@ public abstract class AbstractFullDistribZkTestBase extends AbstractDistribZkTes
     if (shardLeadersOnly) {
       builder.sendUpdatesOnlyToShardLeaders();
     } else {
-      builder.sendUpdatesToAllReplicasInShard();
+      builder.sendUpdatesToAnyReplica();
     }
     if (defaultCollection != null) {
       builder.withDefaultCollection(defaultCollection);
     }
-    return builder
-        .withConnectionTimeout(connectionTimeoutMillis)
-        .withSocketTimeout(socketTimeoutMillis)
-        .build();
+    builder.withInternalClientBuilder(
+        new Http2SolrClient.Builder()
+            .withConnectionTimeout(connectionTimeoutMillis, TimeUnit.MILLISECONDS)
+            .withIdleTimeout(socketTimeoutMillis, TimeUnit.MILLISECONDS));
+    return builder.build();
   }
 
   @Override

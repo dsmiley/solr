@@ -87,7 +87,7 @@ public abstract class AbstractUnloadDistributedZkTestBase extends AbstractFullDi
   private SolrClient newSolrClient(String url) {
     return new Http2SolrClient.Builder(url)
         .withConnectionTimeout(15000, TimeUnit.MILLISECONDS)
-        .withRequestTimeout(30000, TimeUnit.MILLISECONDS)
+        .withIdleTimeout(30000, TimeUnit.MILLISECONDS)
         .build();
   }
 
@@ -319,7 +319,7 @@ public abstract class AbstractUnloadDistributedZkTestBase extends AbstractFullDi
         new Http2SolrClient.Builder(jettys.get(1).getBaseUrl().toString())
             .withDefaultCollection("unloadcollection_shard1_replica2")
             .withConnectionTimeout(30000, TimeUnit.MILLISECONDS)
-            .withRequestTimeout(90000, TimeUnit.MILLISECONDS)
+            .withIdleTimeout(90000, TimeUnit.MILLISECONDS)
             .build()) {
 
       // add a few docs while the leader is down
@@ -384,7 +384,7 @@ public abstract class AbstractUnloadDistributedZkTestBase extends AbstractFullDi
         new Http2SolrClient.Builder(jettys.get(2).getBaseUrl().toString())
             .withDefaultCollection("unloadcollection_shard1_replica3")
             .withConnectionTimeout(15000, TimeUnit.MILLISECONDS)
-            .withRequestTimeout(30000, TimeUnit.MILLISECONDS)
+            .withIdleTimeout(30000, TimeUnit.MILLISECONDS)
             .build()) {
       adminClient.commit();
       SolrQuery q = new SolrQuery("*:*");
