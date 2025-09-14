@@ -2189,7 +2189,7 @@ public abstract class AbstractFullDistribZkTestBase extends AbstractDistribZkTes
     return new Http2SolrClient.Builder(baseUrl)
         .withDefaultCollection(coreName)
         .withConnectionTimeout(DEFAULT_CONNECTION_TIMEOUT, TimeUnit.MILLISECONDS)
-        .withRequestTimeout(60000, TimeUnit.MILLISECONDS)
+        .withIdleTimeout(60000, TimeUnit.MILLISECONDS)
         .build();
   }
 

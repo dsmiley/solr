@@ -38,7 +38,7 @@ class FullThrottleStoppableIndexingThread extends StoppableIndexingThread {
   private static final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
   /** */
-  private final Http2SolrClient http2Client;
+  private final Http2SolrClient httpClient;
 
   private volatile boolean stop = false;
   int clientIndex = 0;
@@ -47,7 +47,7 @@ class FullThrottleStoppableIndexingThread extends StoppableIndexingThread {
   private AtomicInteger fails = new AtomicInteger();
 
   public FullThrottleStoppableIndexingThread(
-      Http2SolrClient http2Client,
+      Http2SolrClient httpClient,
       SolrClient controlClient,
       CloudSolrClient cloudClient,
       List<SolrClient> clients,
@@ -58,11 +58,11 @@ class FullThrottleStoppableIndexingThread extends StoppableIndexingThread {
     setName("FullThrottleStopableIndexingThread");
     setDaemon(true);
     this.clients = clients;
-    this.http2Client = http2Client;
+    this.httpClient = httpClient;
 
     cusc =
         new ErrorLoggingConcurrentUpdateHttp2SolrClient.Builder(
-                ((Http2SolrClient) clients.get(0)).getBaseURL(), http2Client)
+                ((Http2SolrClient) clients.get(0)).getBaseURL(), httpClient)
             .withDefaultCollection(clients.get(0).getDefaultCollection())
             .withQueueSize(8)
             .withThreadCount(2)

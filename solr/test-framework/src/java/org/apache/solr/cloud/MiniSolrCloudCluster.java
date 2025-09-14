@@ -715,7 +715,7 @@ public class MiniSolrCloudCluster {
                   .withDefaultCollection(collectionName)
                   .withInternalClientBuilder(
                       new Http2SolrClient.Builder()
-                          .withRequestTimeout(90000, TimeUnit.MILLISECONDS)
+                          .withIdleTimeout(90000, TimeUnit.MILLISECONDS)
                           .withConnectionTimeout(15000, TimeUnit.MILLISECONDS))
                   .build();
 
@@ -753,7 +753,7 @@ public class MiniSolrCloudCluster {
             Collections.singletonList(getZkServer().getZkAddress()), Optional.empty())
         .withInternalClientBuilder(
             new Http2SolrClient.Builder()
-                .withRequestTimeout(90000, TimeUnit.MILLISECONDS)
+                .withIdleTimeout(90000, TimeUnit.MILLISECONDS)
                 .withConnectionTimeout(15000, TimeUnit.MILLISECONDS))
         .build(); // we choose 90 because we run in some harsh envs
   }

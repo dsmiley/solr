@@ -86,9 +86,9 @@ import org.apache.solr.client.solrj.impl.CloudSolrClient;
 import org.apache.solr.client.solrj.impl.HttpClientUtil;
 import org.apache.solr.client.solrj.impl.HttpSolrClient;
 import org.apache.solr.client.solrj.impl.ClusterStateProvider;
+import org.apache.solr.client.solrj.impl.Http2ClusterStateProvider;
+import org.apache.solr.client.solrj.impl.ZkClientClusterStateProvider;
 import org.apache.solr.client.solrj.impl.Http2SolrClient;
-import org.apache.solr.client.solrj.impl.HttpClientUtil;
-import org.apache.solr.client.solrj.impl.HttpSolrClient;
 import org.apache.solr.client.solrj.response.SolrResponseBase;
 import org.apache.solr.client.solrj.util.ClientUtils;
 import org.apache.solr.cloud.IpTables;
@@ -2588,8 +2588,27 @@ public abstract class SolrTestCaseJ4 extends SolrTestCase {
     }
 
     public RandomizingCloudSolrClientBuilder(MiniSolrCloudCluster cluster) {
-      super(Collections.singletonList(cluster.getZkServer().getZkAddress()), Optional.empty());
+      super(createClusterStateProvider(cluster));
       randomizeCloudSolrClient();
+    }
+
+    private static ClusterStateProvider createClusterStateProvider(MiniSolrCloudCluster cluster) {
+      if (cluster.getZkServer() != null) {
+        // Use ZK-based cluster state provider
+        return new ZkClientClusterStateProvider(
+            Collections.singletonList(cluster.getZkServer().getZkAddress()), null);
+      } else {
+        // Use HTTP-based cluster state provider
+        List<String> solrUrls = new ArrayList<>();
+        for (JettySolrRunner runner : cluster.getJettySolrRunners()) {
+          solrUrls.add(runner.getBaseUrl().toString());
+        }
+        try {
+          return new Http2ClusterStateProvider(solrUrls, null);
+        } catch (Exception e) {
+          throw new RuntimeException("Failed to create Http2ClusterStateProvider", e);
+        }
+      }
     }
 
     private void randomizeCloudSolrClient() {
