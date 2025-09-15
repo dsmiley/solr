@@ -102,14 +102,14 @@ public class ConnectionReuseTest extends SolrCloudTestCase {
         if (shardLeadersOnly) {
           builder.sendUpdatesOnlyToShardLeaders();
         } else {
-          builder.sendUpdatesToAllReplicasInShard();
+          builder.sendUpdatesToAnyReplica();
         }
         builder.withDefaultCollection(COLLECTION);
-        return builder
-            .withHttpClient(httpClient)
-            .withConnectionTimeout(30000)
-            .withSocketTimeout(60000)
-            .build();
+        builder.withInternalClientBuilder(
+            new Http2SolrClient.Builder()
+                .withConnectionTimeout(30000, TimeUnit.MILLISECONDS)
+                .withIdleTimeout(60000, TimeUnit.MILLISECONDS));
+        return builder.build();
     }
     throw new RuntimeException("impossible");
   }

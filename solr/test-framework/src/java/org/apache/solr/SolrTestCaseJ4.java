@@ -2598,10 +2598,16 @@ public abstract class SolrTestCaseJ4 extends SolrTestCase {
         return new ZkClientClusterStateProvider(
             Collections.singletonList(cluster.getZkServer().getZkAddress()), null);
       } else {
-        // Use HTTP-based cluster state provider
+        // Use HTTP-based cluster state provider with randomization
         List<String> solrUrls = new ArrayList<>();
-        for (JettySolrRunner runner : cluster.getJettySolrRunners()) {
-          solrUrls.add(runner.getBaseUrl().toString());
+        if (random().nextBoolean()) {
+          // Use all Solr nodes
+          for (JettySolrRunner runner : cluster.getJettySolrRunners()) {
+            solrUrls.add(runner.getBaseUrl().toString());
+          }
+        } else {
+          // Use just one random jetty
+          solrUrls.add(cluster.getRandomJetty(random()).getBaseUrl().toString());
         }
         try {
           return new Http2ClusterStateProvider(solrUrls, null);

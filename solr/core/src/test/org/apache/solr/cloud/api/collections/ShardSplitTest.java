@@ -41,8 +41,9 @@ import org.apache.lucene.tests.util.LuceneTestCase;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.SolrServerException;
-import org.apache.solr.client.solrj.impl.CloudLegacySolrClient;
+import org.apache.solr.client.solrj.impl.CloudHttp2SolrClient;
 import org.apache.solr.client.solrj.impl.CloudSolrClient;
+import org.apache.solr.client.solrj.impl.Http2SolrClient;
 import org.apache.solr.client.solrj.impl.HttpSolrClient;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest;
 import org.apache.solr.client.solrj.request.QueryRequest;
@@ -157,7 +158,7 @@ public class ShardSplitTest extends BasicDistributedZkTest {
         builder
             .withDefaultCollection(collectionName)
             .sendUpdatesOnlyToShardLeaders()
-            .withHttpClient(((CloudLegacySolrClient) cloudClient).getHttpClient())
+            .withHttpClient(((CloudHttp2SolrClient) cloudClient).getHttpClient())
             .build()) {
       StoppableIndexingThread thread =
           new StoppableIndexingThread(controlClient, client, "i1", true);
@@ -240,8 +241,7 @@ public class ShardSplitTest extends BasicDistributedZkTest {
                   .get(0)
                   .getBaseUrl();
           try (var control =
-              new HttpSolrClient.Builder(control_collection)
-                  .withHttpClient(((CloudLegacySolrClient) client).getHttpClient())
+              new Http2SolrClient.Builder(control_collection)
                   .build()) {
             state = addReplica.processAndWait(control, 30);
           }
@@ -305,9 +305,8 @@ public class ShardSplitTest extends BasicDistributedZkTest {
     int count = 0;
     for (Replica replica : shard.getReplicas()) {
       var client =
-          new HttpSolrClient.Builder(replica.getBaseUrl())
+          new Http2SolrClient.Builder(replica.getBaseUrl())
               .withDefaultCollection(replica.getCoreName())
-              .withHttpClient(((CloudLegacySolrClient) cloudClient).getHttpClient())
               .build();
       QueryResponse response = client.query(new SolrQuery("q", "*:*", "distrib", "false"));
       if (log.isInfoEnabled()) {
