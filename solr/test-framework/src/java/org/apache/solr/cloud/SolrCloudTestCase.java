@@ -43,7 +43,6 @@ import org.apache.solr.client.api.model.CoreStatusResponse;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrRequest;
 import org.apache.solr.client.solrj.SolrServerException;
-import org.apache.solr.client.solrj.impl.CloudHttp2SolrClient;
 import org.apache.solr.client.solrj.impl.Http2SolrClient;
 import org.apache.solr.client.solrj.request.CoreAdminRequest;
 import org.apache.solr.common.cloud.CollectionStatePredicate;
@@ -373,9 +372,7 @@ public class SolrCloudTestCase extends SolrTestCaseJ4 {
   protected static CoreStatusResponse.SingleCoreData getCoreStatus(Replica replica)
       throws IOException, SolrServerException {
     JettySolrRunner jetty = cluster.getReplicaJetty(replica);
-    try (SolrClient client =
-        new Http2SolrClient.Builder(jetty.getBaseUrl().toString())
-            .build()) {
+    try (SolrClient client = new Http2SolrClient.Builder(jetty.getBaseUrl().toString()).build()) {
       return CoreAdminRequest.getCoreStatus(replica.getCoreName(), client);
     }
   }

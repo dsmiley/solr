@@ -765,12 +765,14 @@ public class MiniSolrCloudCluster {
    * @return CloudSolrClient.Builder
    */
   public CloudSolrClient.Builder basicSolrClientBuilder() {
-    CloudSolrClient.Builder builder = new CloudSolrClient.Builder(
+    CloudSolrClient.Builder builder =
+        new CloudSolrClient.Builder(
             Collections.singletonList(getZkServer().getZkAddress()), Optional.empty());
     builder.withInternalClientBuilder(
-            new Http2SolrClient.Builder()
-                .withIdleTimeout(90000, TimeUnit.MILLISECONDS) // we choose 90 because we run in some harsh envs
-                .withConnectionTimeout(15000, TimeUnit.MILLISECONDS));
+        new Http2SolrClient.Builder()
+            .withIdleTimeout(
+                90000, TimeUnit.MILLISECONDS) // we choose 90 because we run in some harsh envs
+            .withConnectionTimeout(15000, TimeUnit.MILLISECONDS));
     return builder;
   }
 

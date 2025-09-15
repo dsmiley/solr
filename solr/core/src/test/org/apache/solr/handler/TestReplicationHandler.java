@@ -42,7 +42,6 @@ import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.store.NIOFSDirectory;
-import org.apache.lucene.tests.util.LuceneTestCase;
 import org.apache.lucene.tests.util.TestUtil;
 import org.apache.lucene.util.Constants;
 import org.apache.solr.BaseDistributedSearchTestCase;
@@ -88,7 +87,7 @@ import org.slf4j.LoggerFactory;
  *
  * @since 1.4
  */
-@LuceneTestCase.Nightly
+// @LuceneTestCase.Nightly
 @SuppressSSL // Currently, unknown why SSL does not work with this test
 public class TestReplicationHandler extends SolrTestCaseJ4 {
 
@@ -221,7 +220,7 @@ public class TestReplicationHandler extends SolrTestCaseJ4 {
 
   private IndexVersionResponse getIndexVersion(SolrClient s, String coreName) throws Exception {
 
-    final var req = new ReplicationApi.FetchIndexVersion(coreName);
+    final var req = new ReplicationApi.FetchIndexVersion(coreName + "NONEXISTENT");
     final var response = req.process(s);
     assertReplicationResponseSucceeded(response);
     return response;
