@@ -61,6 +61,7 @@ import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.SolrRequest;
 import org.apache.solr.client.solrj.SolrRequest.METHOD;
 import org.apache.solr.client.solrj.SolrServerException;
+import org.apache.solr.client.solrj.impl.Http2SolrClient;
 import org.apache.solr.client.solrj.request.QueryRequest;
 import org.apache.solr.client.solrj.request.UpdateRequest;
 import org.apache.solr.client.solrj.response.QueryResponse;
@@ -277,7 +278,7 @@ public class BasicHttpSolrClientTest extends SolrJettyTestBase {
     q.setParam("a", "\u1234");
     final var queryRequest = new QueryRequest(q);
     queryRequest.setPath(debugPath);
-    try (HttpSolrClient client = getHttpSolrClient(getBaseUrl())) {
+    try (Http2SolrClient client = getHttpSolrClient(getBaseUrl())) {
 
       expectThrows(SolrClient.RemoteSolrException.class, () -> queryRequest.process(client));
 
@@ -416,7 +417,7 @@ public class BasicHttpSolrClientTest extends SolrJettyTestBase {
     DebugServlet.clear();
     final String debugPath = "/debug/foo";
 
-    try (HttpSolrClient client = getHttpSolrClient(getBaseUrl())) {
+    try (Http2SolrClient client = getHttpSolrClient(getBaseUrl())) {
       final UpdateRequest deleteById = new UpdateRequest();
       deleteById.deleteById("id");
       deleteById.setPath(debugPath + deleteById.getPath());
@@ -481,7 +482,7 @@ public class BasicHttpSolrClientTest extends SolrJettyTestBase {
     DebugServlet.clear();
     final String debugPath = "/debug/foo";
 
-    try (HttpSolrClient client = getHttpSolrClient(getBaseUrl())) {
+    try (Http2SolrClient client = getHttpSolrClient(getBaseUrl())) {
       UpdateRequest req = new UpdateRequest();
       req.add(new SolrInputDocument());
       req.setPath(debugPath + req.getPath());
