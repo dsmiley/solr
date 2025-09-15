@@ -26,6 +26,7 @@ import org.apache.solr.client.solrj.impl.Http2SolrClient;
 import org.apache.solr.embedded.JettyConfig;
 import org.apache.solr.embedded.JettySolrRunner;
 import org.apache.solr.util.SolrJettyTestRule;
+import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.ee10.servlet.ServletHolder;
 import org.junit.ClassRule;
 
@@ -121,6 +122,11 @@ public abstract class SolrJettyTestBase extends SolrTestCaseJ4 {
     return new Http2SolrClient.Builder(getBaseUrl())
         .withDefaultCollection(DEFAULT_TEST_CORENAME)
         .build();
+  }
+
+  protected HttpClient getHttpClient() {
+    Http2SolrClient client = (Http2SolrClient) getSolrClient();
+    return client.getHttpClient();
   }
 
   // Sets up the necessary config files for Jetty. At least some tests require that the solrconfig

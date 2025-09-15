@@ -240,7 +240,9 @@ public class ShardSplitTest extends BasicDistributedZkTest {
                   .getReplicas()
                   .get(0)
                   .getBaseUrl();
-          try (var control = new Http2SolrClient.Builder(control_collection).build()) {
+          try (var control = new Http2SolrClient.Builder(control_collection)
+              .withHttpClient(((CloudHttp2SolrClient) cloudClient).getHttpClient())
+              .build()) {
             state = addReplica.processAndWait(control, 30);
           }
 
@@ -305,6 +307,7 @@ public class ShardSplitTest extends BasicDistributedZkTest {
       var client =
           new Http2SolrClient.Builder(replica.getBaseUrl())
               .withDefaultCollection(replica.getCoreName())
+              .withHttpClient(((CloudHttp2SolrClient) cloudClient).getHttpClient())
               .build();
       QueryResponse response = client.query(new SolrQuery("q", "*:*", "distrib", "false"));
       if (log.isInfoEnabled()) {
