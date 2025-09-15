@@ -240,9 +240,7 @@ public class ShardSplitTest extends BasicDistributedZkTest {
                   .getReplicas()
                   .get(0)
                   .getBaseUrl();
-          try (var control =
-              new Http2SolrClient.Builder(control_collection)
-                  .build()) {
+          try (var control = new Http2SolrClient.Builder(control_collection).build()) {
             state = addReplica.processAndWait(control, 30);
           }
 
