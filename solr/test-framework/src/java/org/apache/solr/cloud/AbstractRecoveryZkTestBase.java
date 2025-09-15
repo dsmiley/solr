@@ -21,9 +21,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import org.apache.solr.client.solrj.SolrClient;
-import org.apache.solr.client.solrj.SolrQuery;
-import org.apache.solr.client.solrj.impl.Http2SolrClient;
+import org.apache.solr.client.solrj.impl.CloudHttp2SolrClient;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest;
+import org.apache.solr.client.solrj.request.QueryRequest;
 import org.apache.solr.client.solrj.request.UpdateRequest;
 import org.apache.solr.common.cloud.DocCollection;
 import org.apache.solr.common.cloud.Replica;
@@ -136,15 +136,18 @@ public abstract class AbstractRecoveryZkTestBase extends SolrCloudTestCase {
     List<Replica> replicas = shard.getReplicas(r -> r.getState() == Replica.State.ACTIVE);
     long[] numCounts = new long[replicas.size()];
     int i = 0;
+
     for (Replica replica : replicas) {
-      try (var client =
-          new Http2SolrClient.Builder(replica.getBaseUrl())
-              .withDefaultCollection(replica.getCoreName())
-              .build()) {
-        numCounts[i] =
-            client.query(new SolrQuery("*:*").add("distrib", "false")).getResults().getNumFound();
-        i++;
-      }
+      numCounts[i] =
+          ((CloudHttp2SolrClient) cluster.getSolrClient())
+              .getHttpClient()
+              .requestWithBaseUrl( // TODO CloudSolrClient should have this or MiniSolrCluster
+                  replica.getBaseUrl(),
+                  replica.getCoreName(),
+                  new QueryRequest(params("q", "*:*", "distrib", "false")))
+              .getResults()
+              .getNumFound();
+      i++;
     }
     for (int j = 1; j < replicas.size(); j++) {
       if (numCounts[j] != numCounts[j - 1])

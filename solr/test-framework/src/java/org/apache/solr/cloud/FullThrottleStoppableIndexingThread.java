@@ -21,6 +21,7 @@ import java.lang.invoke.MethodHandles;
 import java.net.ConnectException;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.lucene.tests.util.LuceneTestCase;
 import org.apache.solr.client.solrj.SolrClient;
@@ -52,16 +53,22 @@ class FullThrottleStoppableIndexingThread extends StoppableIndexingThread {
       List<SolrClient> clients,
       String id,
       boolean doDeletes,
-      int clientSoTimeout) {
+      long clientSoTimeoutMs) {
     super(controlClient, cloudClient, id, doDeletes);
     setName("FullThrottleStopableIndexingThread");
     setDaemon(true);
     this.clients = clients;
-    this.httpClient = httpClient;
+    // pass through the socket/idle timeout
+    //  TODO should we set connection timeout to 10sec?
+    this.httpClient =
+        new Http2SolrClient.Builder(httpClient.getBaseURL())
+            .withHttpClient(httpClient)
+            .withIdleTimeout(clientSoTimeoutMs, TimeUnit.MILLISECONDS)
+            .build();
 
     cusc =
         new ErrorLoggingConcurrentUpdateHttp2SolrClient.Builder(
-                ((Http2SolrClient) clients.get(0)).getBaseURL(), httpClient)
+                ((Http2SolrClient) clients.get(0)).getBaseURL(), this.httpClient)
             .withDefaultCollection(clients.get(0).getDefaultCollection())
             .withQueueSize(8)
             .withThreadCount(2)

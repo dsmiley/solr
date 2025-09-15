@@ -78,13 +78,10 @@ public class CloudSolrClientCacheTest extends SolrTestCaseJ4 {
     NamedList<Object> okResponse = new NamedList<>();
     okResponse.add("responseHeader", new NamedList<>(Collections.singletonMap("status", 0)));
 
-    // NOTE: mockLbclient is no longer used due to Http2SolrClient migration
-    // TODO: Update this test to work with the new Jetty HttpClient architecture
-    LBHttpSolrClient mockLbclient = getMockLbHttpSolrClient(responses);
+    LBHttp2SolrClient<Http2SolrClient> mockLbclient = getMockLbHttpSolrClient(responses);
     AtomicInteger lbhttpRequestCount = new AtomicInteger();
     try (ClusterStateProvider clusterStateProvider = getStateProvider(livenodes, refs);
-        CloudSolrClient cloudClient =
-            new RandomizingCloudSolrClientBuilder(clusterStateProvider).build()) {
+        CloudSolrClient cloudClient = newCloudSolrClient(clusterStateProvider, mockLbclient)) {
       livenodes.addAll(Set.of("192.168.1.108:7574_solr", "192.168.1.108:8983_solr"));
       ClusterState cs =
           ClusterState.createFromJson(
@@ -113,15 +110,26 @@ public class CloudSolrClientCacheTest extends SolrTestCaseJ4 {
     }
   }
 
-  @SuppressWarnings({"unchecked"})
-  private LBHttpSolrClient getMockLbHttpSolrClient(Map<String, Function<?, ?>> responses)
-      throws Exception {
-    LBHttpSolrClient mockLbclient = mock(LBHttpSolrClient.class);
+  private static CloudHttp2SolrClient newCloudSolrClient(
+      ClusterStateProvider clusterStateProvider, LBHttp2SolrClient<Http2SolrClient> mockLbclient) {
+    var builder = new RandomizingCloudSolrClientBuilder(clusterStateProvider);
+    return new CloudHttp2SolrClient(builder) {
+      @Override
+      public LBHttp2SolrClient<Http2SolrClient> getLbClient() {
+        return mockLbclient;
+      }
+    };
+  }
 
-    when(mockLbclient.request(any(LBSolrClient.Req.class)))
+  @SuppressWarnings({"unchecked"})
+  private LBHttp2SolrClient<Http2SolrClient> getMockLbHttpSolrClient(
+      Map<String, Function<?, ?>> responses) throws Exception {
+    var mockLbclient = mock(LBHttp2SolrClient.class);
+
+    when(mockLbclient.request(any(LBHttp2SolrClient.Req.class)))
         .then(
             invocationOnMock -> {
-              LBSolrClient.Req req = invocationOnMock.getArgument(0);
+              LBHttp2SolrClient.Req req = invocationOnMock.getArgument(0);
               Function<?, ?> f = responses.get("request");
               if (f == null) return null;
               Object res = f.apply(null);

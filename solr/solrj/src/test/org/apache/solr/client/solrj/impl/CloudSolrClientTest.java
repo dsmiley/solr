@@ -872,14 +872,9 @@ public class CloudSolrClientTest extends SolrCloudTestCase {
   public void customHttpClientTest() throws IOException {
     CloseableHttpClient client = HttpClientUtil.createClient(null);
     try (CloudSolrClient solrClient =
-        new RandomizingCloudSolrClientBuilder(
-                Collections.singletonList(cluster.getZkServer().getZkAddress()), Optional.empty())
-            .build()) {
-
-      // NOTE: Custom HTTP client test is no longer applicable with Http2SolrClient migration
-      // TODO: Rewrite this test to work with Jetty HttpClient architecture
-      assertNotNull(solrClient); // Ensure the client was created
-
+        new CloudLegacySolrClient.Builder(
+            cluster.getSolrClient().getClusterStateProvider()) {}.withHttpClient(client).build()) {
+      assertSame(((CloudLegacySolrClient) solrClient).getLbClient().getHttpClient(), client);
     } finally {
       HttpClientUtil.close(client);
     }
