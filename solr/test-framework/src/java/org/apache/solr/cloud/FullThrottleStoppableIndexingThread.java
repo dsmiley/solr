@@ -123,7 +123,7 @@ class FullThrottleStoppableIndexingThread extends StoppableIndexingThread {
       cusc.shutdownNow();
       cusc =
           new ErrorLoggingConcurrentUpdateHttp2SolrClient.Builder(
-                  ((Http2SolrClient) clients.get(clientIndex)).getBaseURL(), http2Client)
+                  ((Http2SolrClient) clients.get(clientIndex)).getBaseURL(), httpClient)
               .withDefaultCollection(clients.get(clientIndex).getDefaultCollection())
               .withQueueSize(30)
               .withThreadCount(3)
