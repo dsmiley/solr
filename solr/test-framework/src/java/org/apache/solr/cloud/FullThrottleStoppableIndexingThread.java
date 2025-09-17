@@ -23,12 +23,11 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import org.apache.http.client.HttpClient;
 import org.apache.lucene.tests.util.LuceneTestCase;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.impl.CloudSolrClient;
-import org.apache.solr.client.solrj.impl.ConcurrentUpdateSolrClient;
-import org.apache.solr.client.solrj.impl.HttpSolrClient;
+import org.apache.solr.client.solrj.impl.ConcurrentUpdateHttp2SolrClient;
+import org.apache.solr.client.solrj.impl.Http2SolrClient;
 import org.apache.solr.common.SolrInputDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,37 +37,40 @@ class FullThrottleStoppableIndexingThread extends StoppableIndexingThread {
   private static final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
   /** */
-  private final HttpClient httpClient;
+  private final Http2SolrClient httpClient;
 
   private volatile boolean stop = false;
   int clientIndex = 0;
-  private ConcurrentUpdateSolrClient cusc;
+  private ConcurrentUpdateHttp2SolrClient cusc;
   private List<SolrClient> clients;
   private AtomicInteger fails = new AtomicInteger();
 
   public FullThrottleStoppableIndexingThread(
-      HttpClient httpClient,
+      Http2SolrClient httpClient,
       SolrClient controlClient,
       CloudSolrClient cloudClient,
       List<SolrClient> clients,
       String id,
       boolean doDeletes,
-      int clientSoTimeout) {
+      long clientSoTimeoutMs) {
     super(controlClient, cloudClient, id, doDeletes);
     setName("FullThrottleStopableIndexingThread");
     setDaemon(true);
     this.clients = clients;
-    this.httpClient = httpClient;
+    // pass through the socket/idle timeout
+    //  TODO should we set connection timeout to 10sec?
+    this.httpClient =
+        new Http2SolrClient.Builder(httpClient.getBaseURL())
+            .withHttpClient(httpClient)
+            .withIdleTimeout(clientSoTimeoutMs, TimeUnit.MILLISECONDS)
+            .build();
 
     cusc =
         new ErrorLoggingConcurrentUpdateSolrClient.Builder(
-                ((HttpSolrClient) clients.get(0)).getBaseURL())
+                ((Http2SolrClient) clients.get(0)).getBaseURL(), this.httpClient)
             .withDefaultCollection(clients.get(0).getDefaultCollection())
-            .withHttpClient(httpClient)
             .withQueueSize(8)
             .withThreadCount(2)
-            .withConnectionTimeout(10000, TimeUnit.MILLISECONDS)
-            .withSocketTimeout(clientSoTimeout, TimeUnit.MILLISECONDS)
             .build();
   }
 
@@ -127,9 +129,8 @@ class FullThrottleStoppableIndexingThread extends StoppableIndexingThread {
       cusc.shutdownNow();
       cusc =
           new ErrorLoggingConcurrentUpdateSolrClient.Builder(
-                  ((HttpSolrClient) clients.get(clientIndex)).getBaseURL())
+                  ((Http2SolrClient) clients.get(clientIndex)).getBaseURL(), httpClient)
               .withDefaultCollection(clients.get(clientIndex).getDefaultCollection())
-              .withHttpClient(httpClient)
               .withQueueSize(30)
               .withThreadCount(3)
               .build();
@@ -163,7 +164,7 @@ class FullThrottleStoppableIndexingThread extends StoppableIndexingThread {
     throw new UnsupportedOperationException();
   }
 
-  static class ErrorLoggingConcurrentUpdateSolrClient extends ConcurrentUpdateSolrClient {
+  static class ErrorLoggingConcurrentUpdateSolrClient extends ConcurrentUpdateHttp2SolrClient {
     public ErrorLoggingConcurrentUpdateSolrClient(Builder builder) {
       super(builder);
     }
@@ -173,10 +174,10 @@ class FullThrottleStoppableIndexingThread extends StoppableIndexingThread {
       log.warn("cusc error", ex);
     }
 
-    static class Builder extends ConcurrentUpdateSolrClient.Builder {
+    static class Builder extends ConcurrentUpdateHttp2SolrClient.Builder {
 
-      public Builder(String baseSolrUrl) {
-        super(baseSolrUrl);
+      public Builder(String baseSolrUrl, Http2SolrClient client) {
+        super(baseSolrUrl, client);
       }
 
       @Override

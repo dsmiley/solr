@@ -51,6 +51,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 @SuppressSSL
+@Deprecated // TODO delete when we remove Apache HttpClient
 public class ConnectionReuseTest extends SolrCloudTestCase {
   private static final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
@@ -96,13 +97,13 @@ public class ConnectionReuseTest extends SolrCloudTestCase {
             .build();
       case 2:
         var builder =
-            new RandomizingCloudSolrClientBuilder(
+            new CloudLegacySolrClient.Builder(
                 Collections.singletonList(cluster.getZkServer().getZkAddress()), Optional.empty());
         boolean shardLeadersOnly = random().nextBoolean();
         if (shardLeadersOnly) {
           builder.sendUpdatesOnlyToShardLeaders();
         } else {
-          builder.sendUpdatesToAllReplicasInShard();
+          builder.sendDirectUpdatesToAnyShardReplica();
         }
         builder.withDefaultCollection(COLLECTION);
         return builder

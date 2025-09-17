@@ -27,13 +27,11 @@ import java.net.SocketException;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
-import org.apache.http.NoHttpResponseException;
 import org.apache.solr.SolrTestCaseJ4;
 import org.apache.solr.client.solrj.cloud.DelegatingClusterStateProvider;
 import org.apache.solr.client.solrj.request.UpdateRequest;
@@ -51,7 +49,6 @@ public class CloudSolrClientCacheTest extends SolrTestCaseJ4 {
 
   public void testCaching() throws Exception {
     String collName = "gettingstarted";
-    Set<String> livenodes = new HashSet<>();
     Map<String, ClusterState.CollectionRef> refs = new HashMap<>();
     Map<String, DocCollection> colls = new HashMap<>();
 
@@ -74,38 +71,18 @@ public class CloudSolrClientCacheTest extends SolrTestCaseJ4 {
         return colls.get(c);
       }
     }
-    Map<String, Function<?, ?>> responses = new HashMap<>();
-    NamedList<Object> okResponse = new NamedList<>();
-    okResponse.add("responseHeader", new NamedList<>(Collections.singletonMap("status", 0)));
 
-    LBHttpSolrClient mockLbclient = getMockLbHttpSolrClient(responses);
-    AtomicInteger lbhttpRequestCount = new AtomicInteger();
+    var cs =
+        ClusterState.createFromJson(
+            1, coll1State.getBytes(UTF_8), Collections.emptySet(), Instant.now(), null);
+    refs.put(collName, new Ref(collName));
+    colls.put(collName, cs.getCollectionOrNull(collName));
+
+    Set<String> livenodes = Set.of("192.168.1.108:7574_solr", "192.168.1.108:8983_solr");
+
     try (ClusterStateProvider clusterStateProvider = getStateProvider(livenodes, refs);
-        CloudSolrClient cloudClient =
-            new RandomizingCloudSolrClientBuilder(clusterStateProvider)
-                .withLBHttpSolrClient(mockLbclient)
-                .build()) {
-      livenodes.addAll(Set.of("192.168.1.108:7574_solr", "192.168.1.108:8983_solr"));
-      ClusterState cs =
-          ClusterState.createFromJson(
-              1, coll1State.getBytes(UTF_8), Collections.emptySet(), Instant.now(), null);
-      refs.put(collName, new Ref(collName));
-      colls.put(collName, cs.getCollectionOrNull(collName));
-      responses.put(
-          "request",
-          o -> {
-            int i = lbhttpRequestCount.incrementAndGet();
-            if (i == 1) {
-              return new ConnectException("TEST");
-            }
-            if (i == 2) {
-              return new SocketException("TEST");
-            }
-            if (i == 3) {
-              return new NoHttpResponseException("TEST");
-            }
-            return okResponse;
-          });
+        CloudSolrClient cloudClient = newFlakyCloudSolrClient(clusterStateProvider)) {
+
       UpdateRequest update = new UpdateRequest().add("id", "123", "desc", "Something 0");
 
       cloudClient.request(update, collName);
@@ -113,15 +90,48 @@ public class CloudSolrClientCacheTest extends SolrTestCaseJ4 {
     }
   }
 
-  @SuppressWarnings({"unchecked"})
-  private LBHttpSolrClient getMockLbHttpSolrClient(Map<String, Function<?, ?>> responses)
-      throws Exception {
-    LBHttpSolrClient mockLbclient = mock(LBHttpSolrClient.class);
+  private static CloudHttp2SolrClient newFlakyCloudSolrClient(
+      ClusterStateProvider clusterStateProvider) throws Exception {
+    Map<String, Function<?, ?>> responses = new HashMap<>();
 
-    when(mockLbclient.request(any(LBSolrClient.Req.class)))
+    NamedList<Object> okResponse = new NamedList<>();
+    okResponse.add("responseHeader", new NamedList<>(Collections.singletonMap("status", 0)));
+
+    AtomicInteger lbhttpRequestCount = new AtomicInteger();
+    responses.put(
+        "request",
+        o -> {
+          int i = lbhttpRequestCount.incrementAndGet();
+          // communication exceptions
+          if (i == 1) {
+            return new ConnectException("TEST");
+          }
+          if (i == 2) {
+            return new SocketException("TEST");
+          }
+          return okResponse;
+        });
+
+    var mockLbclient = newMockLbHttpSolrClient(responses);
+
+    var builder = new RandomizingCloudSolrClientBuilder(clusterStateProvider);
+    return new CloudHttp2SolrClient(builder) {
+      @Override
+      public LBHttp2SolrClient<Http2SolrClient> getLbClient() {
+        return mockLbclient;
+      }
+    };
+  }
+
+  @SuppressWarnings({"unchecked"})
+  private static LBHttp2SolrClient<Http2SolrClient> newMockLbHttpSolrClient(
+      Map<String, Function<?, ?>> responses) throws Exception {
+    var mockLbclient = mock(LBHttp2SolrClient.class);
+
+    when(mockLbclient.request(any(LBHttp2SolrClient.Req.class)))
         .then(
             invocationOnMock -> {
-              LBSolrClient.Req req = invocationOnMock.getArgument(0);
+              LBHttp2SolrClient.Req req = invocationOnMock.getArgument(0);
               Function<?, ?> f = responses.get("request");
               if (f == null) return null;
               Object res = f.apply(null);
@@ -159,7 +169,7 @@ public class CloudSolrClientCacheTest extends SolrTestCaseJ4 {
     };
   }
 
-  private String coll1State =
+  private static final String coll1State =
       "{'gettingstarted':{\n"
           + "    'replicationFactor':'2',\n"
           + "    'router':{'name':'compositeId'},\n"

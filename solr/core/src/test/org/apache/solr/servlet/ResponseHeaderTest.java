@@ -59,7 +59,7 @@ public class ResponseHeaderTest extends SolrJettyTestBase {
   public void testHttpResponse() throws IOException {
     URI uri = URI.create(getBaseUrl() + "/collection1/withHeaders?q=*:*");
     HttpGet httpGet = new HttpGet(uri);
-    HttpResponse response = getHttpClient().execute(httpGet);
+    HttpResponse response = getHttpClient(getBaseUrl()).execute(httpGet);
     Header[] headers = response.getAllHeaders();
     boolean containsWarningHeader = false;
     for (Header header : headers) {

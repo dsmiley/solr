@@ -21,12 +21,12 @@ import java.nio.file.Path;
 import java.util.Properties;
 import java.util.SortedMap;
 import org.apache.commons.io.file.PathUtils;
-import org.apache.http.client.HttpClient;
 import org.apache.solr.client.solrj.SolrClient;
-import org.apache.solr.client.solrj.impl.HttpSolrClient;
+import org.apache.solr.client.solrj.impl.Http2SolrClient;
 import org.apache.solr.embedded.JettyConfig;
 import org.apache.solr.embedded.JettySolrRunner;
 import org.apache.solr.util.SolrJettyTestRule;
+import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.ee10.servlet.ServletHolder;
 import org.junit.ClassRule;
 
@@ -119,13 +119,13 @@ public abstract class SolrJettyTestBase extends SolrTestCaseJ4 {
    * options.
    */
   public SolrClient createNewSolrClient() {
-    return new HttpSolrClient.Builder(getBaseUrl())
+    return new Http2SolrClient.Builder(getBaseUrl())
         .withDefaultCollection(DEFAULT_TEST_CORENAME)
         .build();
   }
 
   protected HttpClient getHttpClient() {
-    HttpSolrClient client = (HttpSolrClient) getSolrClient();
+    Http2SolrClient client = (Http2SolrClient) getSolrClient();
     return client.getHttpClient();
   }
 

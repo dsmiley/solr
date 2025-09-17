@@ -35,7 +35,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.lucene.tests.util.TestUtil;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrQuery;
@@ -927,17 +926,15 @@ public class CloudHttp2SolrClientTest extends SolrCloudTestCase {
 
   @Test
   public void customHttpClientTest() throws IOException {
-    CloseableHttpClient client = HttpClientUtil.createClient(null);
-    try (CloudSolrClient solrClient =
-        new RandomizingCloudSolrClientBuilder(
-                Collections.singletonList(cluster.getZkServer().getZkAddress()), Optional.empty())
-            .withHttpClient(client)
-            .build()) {
-
-      assertSame(((CloudLegacySolrClient) solrClient).getLbClient().getHttpClient(), client);
-
-    } finally {
-      HttpClientUtil.close(client);
+    try (var solrHttpClient =
+            new Http2SolrClient.Builder(cluster.getJettySolrRunner(0).getBaseUrl().toString())
+                .build();
+        var solrClient =
+            new RandomizingCloudSolrClientBuilder(
+                    List.of(cluster.getZkServer().getZkAddress()), Optional.empty())
+                .withHttpClient(solrHttpClient)
+                .build()) {
+      assertSame(solrHttpClient, solrClient.getHttpClient()); // Ensure the client was created
     }
   }
 

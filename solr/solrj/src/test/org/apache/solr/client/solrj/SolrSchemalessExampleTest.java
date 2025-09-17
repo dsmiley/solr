@@ -83,7 +83,7 @@ public class SolrSchemalessExampleTest extends SolrExampleTestsBase {
 
     // two docs, one with uniqueKey, another without it
     String json = "{\"id\":\"abc1\", \"name\": \"name1\"} {\"name\" : \"name2\"}";
-    HttpClient httpClient = getHttpClient();
+    HttpClient httpClient = getHttpClient(getBaseUrl());
     HttpPost post = new HttpPost(getCoreUrl() + "/update/json/docs");
     post.setHeader("Content-Type", "application/json");
     post.setEntity(
@@ -111,7 +111,7 @@ public class SolrSchemalessExampleTest extends SolrExampleTestsBase {
             + "{\"p%q\" : \"name\"}"
             + "{\"p.q\" : \"name\"}"
             + "{\"a&b\" : \"name\"}";
-    HttpClient httpClient = getHttpClient();
+    HttpClient httpClient = getHttpClient(getBaseUrl());
     HttpPost post = new HttpPost(getCoreUrl() + "/update/json/docs");
     post.setHeader("Content-Type", "application/json");
     post.setEntity(

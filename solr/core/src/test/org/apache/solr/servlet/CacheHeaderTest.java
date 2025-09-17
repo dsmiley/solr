@@ -20,14 +20,18 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Arrays;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.Date;
-import org.apache.http.Header;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpRequestBase;
-import org.apache.http.impl.cookie.DateUtils;
+import java.util.concurrent.TimeUnit;
 import org.apache.solr.common.params.CommonParams;
 import org.apache.solr.common.util.SuppressForbidden;
+import org.eclipse.jetty.client.Response;
+import org.eclipse.jetty.http.HttpField;
+import org.eclipse.jetty.http.HttpMethod;
+import org.eclipse.jetty.http.HttpStatus;
+import org.eclipse.jetty.util.Fields;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -49,220 +53,265 @@ public class CacheHeaderTest extends CacheHeaderTestBase {
   @Test
   public void testCacheVetoHandler() throws Exception {
     Path f = makeFile(CacheHeaderTest.CONTENTS, StandardCharsets.UTF_8.name());
-    HttpRequestBase m =
-        getUpdateMethod(
-            "GET",
-            CommonParams.STREAM_FILE,
-            f.toRealPath().toString(),
-            CommonParams.STREAM_CONTENTTYPE,
-            "text/csv");
-    HttpResponse response = getHttpClient().execute(m);
-    assertEquals(200, response.getStatusLine().getStatusCode());
+    Fields queryParams = new Fields();
+    queryParams.add(CommonParams.STREAM_FILE, f.toRealPath().toString());
+    queryParams.add(CommonParams.STREAM_CONTENTTYPE, "text/csv");
+    
+    String url = getBaseUrl() + "/" + DEFAULT_TEST_COLLECTION_NAME + "/update?" + 
+                 queryParams.encode(StandardCharsets.UTF_8);
+    
+    Response response = getHttpClient().newRequest(url)
+        .method(HttpMethod.GET)
+        .timeout(10, TimeUnit.SECONDS)
+        .send();
+    assertEquals(HttpStatus.OK_200, response.getStatus());
     checkVetoHeaders(response, true);
     Files.delete(f);
   }
 
   @Test
   public void testCacheVetoException() throws Exception {
-    HttpRequestBase m = getSelectMethod("GET", "q", "xyz_ignore_exception:solr", "qt", "standard");
+    Fields queryParams = new Fields();
+    queryParams.add("q", "xyz_ignore_exception:solr");
+    queryParams.add("qt", "standard");
+    
+    String url = getBaseUrl() + "/" + DEFAULT_TEST_COLLECTION_NAME + "/select?" + 
+                 queryParams.encode(StandardCharsets.UTF_8);
+    
     // We force an exception from Solr. This should emit "no-cache" HTTP headers
-    HttpResponse response = getHttpClient().execute(m);
-    assertNotEquals(200, response.getStatusLine().getStatusCode());
+    Response response = getHttpClient().newRequest(url)
+        .method(HttpMethod.GET)
+        .timeout(10, TimeUnit.SECONDS)
+        .send();
+    assertNotEquals(HttpStatus.OK_200, response.getStatus());
     checkVetoHeaders(response, false);
   }
 
   @SuppressForbidden(reason = "Needs currentTimeMillis to check against expiry headers from Solr")
-  protected void checkVetoHeaders(HttpResponse response, boolean checkExpires) throws Exception {
-    Header head = response.getFirstHeader("Cache-Control");
-    assertNotNull("We got no Cache-Control header", head);
+  protected void checkVetoHeaders(Response response, boolean checkExpires) throws Exception {
+    String cacheControl = response.getHeaders().get("Cache-Control");
+    assertNotNull("We got no Cache-Control header", cacheControl);
     assertTrue(
-        "We got no no-cache in the Cache-Control header [" + head + "]",
-        head.getValue().contains("no-cache"));
+        "We got no no-cache in the Cache-Control header [" + cacheControl + "]",
+        cacheControl.contains("no-cache"));
     assertTrue(
-        "We got no no-store in the Cache-Control header [" + head + "]",
-        head.getValue().contains("no-store"));
+        "We got no no-store in the Cache-Control header [" + cacheControl + "]",
+        cacheControl.contains("no-store"));
 
-    head = response.getFirstHeader("Pragma");
-    assertNotNull("We got no Pragma header", head);
-    assertEquals("no-cache", head.getValue());
+    String pragma = response.getHeaders().get("Pragma");
+    assertNotNull("We got no Pragma header", pragma);
+    assertEquals("no-cache", pragma);
 
     if (checkExpires) {
-      head = response.getFirstHeader("Expires");
-      assertNotNull("We got no Expires header:" + Arrays.asList(response.getAllHeaders()), head);
-      Date d = DateUtils.parseDate(head.getValue());
+      String expires = response.getHeaders().get("Expires");
+      assertNotNull("We got no Expires header", expires);
+      // Parse the date using HTTP date format
+      Instant d = parseHttpDate(expires);
       assertTrue(
           "We got no Expires header far in the past",
-          System.currentTimeMillis() - d.getTime() > 100000);
+          System.currentTimeMillis() - d.toEpochMilli() > 100000);
     }
+  }
+
+  private Instant parseHttpDate(String dateStr) {
+    // HTTP date formats (RFC 7231)
+    DateTimeFormatter[] formatters = {
+        DateTimeFormatter.RFC_1123_DATE_TIME,
+        DateTimeFormatter.ofPattern("EEEE, dd-MMM-yy HH:mm:ss zzz"),
+        DateTimeFormatter.ofPattern("EEE MMM dd HH:mm:ss yyyy")
+    };
+    
+    for (DateTimeFormatter formatter : formatters) {
+      try {
+        return Instant.from(formatter.parse(dateStr));
+      } catch (Exception e) {
+        // Try next format
+      }
+    }
+    throw new IllegalArgumentException("Unable to parse date: " + dateStr);
   }
 
   @Override
   protected void doLastModified(String method) throws Exception {
     // We do a first request to get the last modified
     // This must result in a 200 OK response
-    HttpRequestBase get = getSelectMethod(method);
-    HttpResponse response = getHttpClient().execute(get);
+    Response response = executeRequest(HttpMethod.valueOf(method));
     checkResponseBody(method, response);
 
     assertEquals(
         "Got no response code 200 in initial request",
-        200,
-        response.getStatusLine().getStatusCode());
+        HttpStatus.OK_200,
+        response.getStatus());
 
-    Header head = response.getFirstHeader("Last-Modified");
-    assertNotNull("We got no Last-Modified header", head);
+    String lastModified = response.getHeaders().get("Last-Modified");
+    assertNotNull("We got no Last-Modified header", lastModified);
 
-    Date lastModified = DateUtils.parseDate(head.getValue());
+    Instant lastModifiedDate = parseHttpDate(lastModified);
 
     // If-Modified-Since tests
-    get = getSelectMethod(method);
-    get.addHeader("If-Modified-Since", DateUtils.formatDate(new Date()));
-
-    response = getHttpClient().execute(get);
+    String currentDateStr = DateTimeFormatter.RFC_1123_DATE_TIME.format(
+        Instant.now().atZone(ZoneId.of("GMT")));
+    
+    response = getHttpClient().newRequest(getBaseUrl() + "/" + DEFAULT_TEST_COLLECTION_NAME + "/select?q=solr&qt=standard")
+        .method(HttpMethod.valueOf(method))
+        .header("If-Modified-Since", currentDateStr)
+        .timeout(10, TimeUnit.SECONDS)
+        .send();
     checkResponseBody(method, response);
     assertEquals(
         "Expected 304 NotModified response with current date",
-        304,
-        response.getStatusLine().getStatusCode());
+        HttpStatus.NOT_MODIFIED_304,
+        response.getStatus());
 
-    get = getSelectMethod(method);
-    get.addHeader(
-        "If-Modified-Since", DateUtils.formatDate(new Date(lastModified.getTime() - 10000)));
-    response = getHttpClient().execute(get);
+    String pastDateStr = DateTimeFormatter.RFC_1123_DATE_TIME.format(
+        lastModifiedDate.minusSeconds(10).atZone(ZoneId.of("GMT")));
+    
+    response = getHttpClient().newRequest(getBaseUrl() + "/" + DEFAULT_TEST_COLLECTION_NAME + "/select?q=solr&qt=standard")
+        .method(HttpMethod.valueOf(method))
+        .header("If-Modified-Since", pastDateStr)
+        .timeout(10, TimeUnit.SECONDS)
+        .send();
     checkResponseBody(method, response);
     assertEquals(
         "Expected 200 OK response with If-Modified-Since in the past",
-        200,
-        response.getStatusLine().getStatusCode());
+        HttpStatus.OK_200,
+        response.getStatus());
 
     // If-Unmodified-Since tests
-    get = getSelectMethod(method);
-    get.addHeader(
-        "If-Unmodified-Since", DateUtils.formatDate(new Date(lastModified.getTime() - 10000)));
-
-    response = getHttpClient().execute(get);
+    response = getHttpClient().newRequest(getBaseUrl() + "/" + DEFAULT_TEST_COLLECTION_NAME + "/select?q=solr&qt=standard")
+        .method(HttpMethod.valueOf(method))
+        .header("If-Unmodified-Since", pastDateStr)
+        .timeout(10, TimeUnit.SECONDS)
+        .send();
     checkResponseBody(method, response);
     assertEquals(
         "Expected 412 Precondition failed with If-Unmodified-Since in the past",
-        412,
-        response.getStatusLine().getStatusCode());
+        HttpStatus.PRECONDITION_FAILED_412,
+        response.getStatus());
 
-    get = getSelectMethod(method);
-    get.addHeader("If-Unmodified-Since", DateUtils.formatDate(new Date()));
-    response = getHttpClient().execute(get);
+    response = getHttpClient().newRequest(getBaseUrl() + "/" + DEFAULT_TEST_COLLECTION_NAME + "/select?q=solr&qt=standard")
+        .method(HttpMethod.valueOf(method))
+        .header("If-Unmodified-Since", currentDateStr)
+        .timeout(10, TimeUnit.SECONDS)
+        .send();
     checkResponseBody(method, response);
     assertEquals(
         "Expected 200 OK response with If-Unmodified-Since and current date",
-        200,
-        response.getStatusLine().getStatusCode());
+        HttpStatus.OK_200,
+        response.getStatus());
   }
 
   // test ETag
   @Override
   protected void doETag(String method) throws Exception {
-    HttpRequestBase get = getSelectMethod(method);
-    HttpResponse response = getHttpClient().execute(get);
+    Response response = executeRequest(HttpMethod.valueOf(method));
     checkResponseBody(method, response);
 
     assertEquals(
         "Got no response code 200 in initial request",
-        200,
-        response.getStatusLine().getStatusCode());
+        HttpStatus.OK_200,
+        response.getStatus());
 
-    Header head = response.getFirstHeader("ETag");
-    assertNotNull("We got no ETag in the response", head);
+    String etag = response.getHeaders().get("ETag");
+    assertNotNull("We got no ETag in the response", etag);
     assertTrue(
-        "Not a valid ETag", head.getValue().startsWith("\"") && head.getValue().endsWith("\""));
-
-    String etag = head.getValue();
+        "Not a valid ETag", etag.startsWith("\"") && etag.endsWith("\""));
 
     // If-None-Match tests
     // we set a non-matching ETag
-    get = getSelectMethod(method);
-    get.addHeader("If-None-Match", "\"xyz123456\"");
-    response = getHttpClient().execute(get);
+    response = getHttpClient().newRequest(getBaseUrl() + "/" + DEFAULT_TEST_COLLECTION_NAME + "/select?q=solr&qt=standard")
+        .method(HttpMethod.valueOf(method))
+        .header("If-None-Match", "\"xyz123456\"")
+        .timeout(10, TimeUnit.SECONDS)
+        .send();
     checkResponseBody(method, response);
     assertEquals(
         "If-None-Match: Got no response code 200 in response to non matching ETag",
-        200,
-        response.getStatusLine().getStatusCode());
+        HttpStatus.OK_200,
+        response.getStatus());
 
     // now we set matching ETags
-    get = getSelectMethod(method);
-    get.addHeader("If-None-Match", "\"xyz1223\"");
-    get.addHeader("If-None-Match", "\"1231323423\", \"1211211\",   " + etag);
-    response = getHttpClient().execute(get);
+    response = getHttpClient().newRequest(getBaseUrl() + "/" + DEFAULT_TEST_COLLECTION_NAME + "/select?q=solr&qt=standard")
+        .method(HttpMethod.valueOf(method))
+        .header("If-None-Match", "\"xyz1223\", \"1231323423\", \"1211211\", " + etag)
+        .timeout(10, TimeUnit.SECONDS)
+        .send();
     checkResponseBody(method, response);
     assertEquals(
         "If-None-Match: Got no response 304 to matching ETag",
-        304,
-        response.getStatusLine().getStatusCode());
+        HttpStatus.NOT_MODIFIED_304,
+        response.getStatus());
 
     // we now set the special star ETag
-    get = getSelectMethod(method);
-    get.addHeader("If-None-Match", "*");
-    response = getHttpClient().execute(get);
+    response = getHttpClient().newRequest(getBaseUrl() + "/" + DEFAULT_TEST_COLLECTION_NAME + "/select?q=solr&qt=standard")
+        .method(HttpMethod.valueOf(method))
+        .header("If-None-Match", "*")
+        .timeout(10, TimeUnit.SECONDS)
+        .send();
     checkResponseBody(method, response);
     assertEquals(
         "If-None-Match: Got no response 304 for star ETag",
-        304,
-        response.getStatusLine().getStatusCode());
+        HttpStatus.NOT_MODIFIED_304,
+        response.getStatus());
 
     // If-Match tests
     // we set a non-matching ETag
-    get = getSelectMethod(method);
-    get.addHeader("If-Match", "\"xyz123456\"");
-    response = getHttpClient().execute(get);
+    response = getHttpClient().newRequest(getBaseUrl() + "/" + DEFAULT_TEST_COLLECTION_NAME + "/select?q=solr&qt=standard")
+        .method(HttpMethod.valueOf(method))
+        .header("If-Match", "\"xyz123456\"")
+        .timeout(10, TimeUnit.SECONDS)
+        .send();
     checkResponseBody(method, response);
     assertEquals(
         "If-Match: Got no response code 412 in response to non matching ETag",
-        412,
-        response.getStatusLine().getStatusCode());
+        HttpStatus.PRECONDITION_FAILED_412,
+        response.getStatus());
 
     // now we set matching ETags
-    get = getSelectMethod(method);
-    get.addHeader("If-Match", "\"xyz1223\"");
-    get.addHeader("If-Match", "\"1231323423\", \"1211211\",   " + etag);
-    response = getHttpClient().execute(get);
+    response = getHttpClient().newRequest(getBaseUrl() + "/" + DEFAULT_TEST_COLLECTION_NAME + "/select?q=solr&qt=standard")
+        .method(HttpMethod.valueOf(method))
+        .header("If-Match", "\"xyz1223\", \"1231323423\", \"1211211\", " + etag)
+        .timeout(10, TimeUnit.SECONDS)
+        .send();
     checkResponseBody(method, response);
     assertEquals(
         "If-Match: Got no response 200 to matching ETag",
-        200,
-        response.getStatusLine().getStatusCode());
+        HttpStatus.OK_200,
+        response.getStatus());
 
     // now we set the special star ETag
-    get = getSelectMethod(method);
-    get.addHeader("If-Match", "*");
-    response = getHttpClient().execute(get);
+    response = getHttpClient().newRequest(getBaseUrl() + "/" + DEFAULT_TEST_COLLECTION_NAME + "/select?q=solr&qt=standard")
+        .method(HttpMethod.valueOf(method))
+        .header("If-Match", "*")
+        .timeout(10, TimeUnit.SECONDS)
+        .send();
     checkResponseBody(method, response);
     assertEquals(
         "If-Match: Got no response 200 to star ETag",
-        200,
-        response.getStatusLine().getStatusCode());
+        HttpStatus.OK_200,
+        response.getStatus());
   }
 
   @Override
   protected void doCacheControl(String method) throws Exception {
     if ("POST".equals(method)) {
-      HttpRequestBase m = getSelectMethod(method);
-      HttpResponse response = getHttpClient().execute(m);
+      Response response = executeRequest(HttpMethod.POST);
       checkResponseBody(method, response);
 
-      Header head = response.getFirstHeader("Cache-Control");
-      assertNull("We got a cache-control header in response to POST", head);
+      String cacheControl = response.getHeaders().get("Cache-Control");
+      assertNull("We got a cache-control header in response to POST", cacheControl);
 
-      head = response.getFirstHeader("Expires");
-      assertNull("We got an Expires  header in response to POST", head);
+      String expires = response.getHeaders().get("Expires");
+      assertNull("We got an Expires  header in response to POST", expires);
     } else {
-      HttpRequestBase m = getSelectMethod(method);
-      HttpResponse response = getHttpClient().execute(m);
+      Response response = executeRequest(HttpMethod.valueOf(method));
       checkResponseBody(method, response);
 
-      Header head = response.getFirstHeader("Cache-Control");
-      assertNotNull("We got no cache-control header", head);
+      String cacheControl = response.getHeaders().get("Cache-Control");
+      assertNotNull("We got no cache-control header", cacheControl);
 
-      head = response.getFirstHeader("Expires");
-      assertNotNull("We got no Expires header in response", head);
+      String expires = response.getHeaders().get("Expires");
+      assertNotNull("We got no Expires header in response", expires);
     }
   }
 

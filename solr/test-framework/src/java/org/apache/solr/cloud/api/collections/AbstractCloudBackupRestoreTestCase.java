@@ -29,13 +29,12 @@ import java.util.Properties;
 import java.util.Random;
 import java.util.TreeMap;
 import org.apache.lucene.tests.util.TestUtil;
-import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.SolrServerException;
-import org.apache.solr.client.solrj.impl.CloudLegacySolrClient;
+import org.apache.solr.client.solrj.impl.CloudHttp2SolrClient;
 import org.apache.solr.client.solrj.impl.CloudSolrClient;
-import org.apache.solr.client.solrj.impl.HttpSolrClient;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest.ClusterProp;
+import org.apache.solr.client.solrj.request.QueryRequest;
 import org.apache.solr.client.solrj.response.RequestStatusState;
 import org.apache.solr.cloud.AbstractDistribZkTestBase;
 import org.apache.solr.cloud.SolrCloudTestCase;
@@ -495,18 +494,16 @@ public abstract class AbstractCloudBackupRestoreTestCase extends SolrCloudTestCa
     Map<String, Integer> shardToDocCount = new TreeMap<>();
     for (Slice slice : docCollection.getActiveSlices()) {
       String shardName = slice.getName();
-      try (var leaderClient =
-          new HttpSolrClient.Builder(slice.getLeader().getBaseUrl())
-              .withDefaultCollection(slice.getLeader().getCoreName())
-              .withHttpClient(((CloudLegacySolrClient) client).getHttpClient())
-              .build()) {
-        long docsInShard =
-            leaderClient
-                .query(new SolrQuery("*:*").setParam("distrib", "false"))
-                .getResults()
-                .getNumFound();
-        shardToDocCount.put(shardName, (int) docsInShard);
-      }
+      long docsInShard =
+          ((CloudHttp2SolrClient) client)
+              .getHttpClient()
+              .requestWithBaseUrl( // TODO CloudSolrClient should have this
+                  slice.getLeader().getBaseUrl(),
+                  slice.getLeader().getCoreName(),
+                  new QueryRequest(params("q", "*:*", "distrib", "false")))
+              .getResults()
+              .getNumFound();
+      shardToDocCount.put(shardName, (int) docsInShard);
     }
     return shardToDocCount;
   }
