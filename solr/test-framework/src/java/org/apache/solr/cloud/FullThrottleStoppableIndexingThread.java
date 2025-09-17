@@ -27,7 +27,6 @@ import org.apache.lucene.tests.util.LuceneTestCase;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.impl.CloudSolrClient;
 import org.apache.solr.client.solrj.impl.ConcurrentUpdateHttp2SolrClient;
-import org.apache.solr.client.solrj.impl.ConcurrentUpdateSolrClient;
 import org.apache.solr.client.solrj.impl.Http2SolrClient;
 import org.apache.solr.common.SolrInputDocument;
 import org.slf4j.Logger;
@@ -67,7 +66,7 @@ class FullThrottleStoppableIndexingThread extends StoppableIndexingThread {
             .build();
 
     cusc =
-        new ErrorLoggingConcurrentUpdateHttp2SolrClient.Builder(
+        new ErrorLoggingConcurrentUpdateSolrClient.Builder(
                 ((Http2SolrClient) clients.get(0)).getBaseURL(), this.httpClient)
             .withDefaultCollection(clients.get(0).getDefaultCollection())
             .withQueueSize(8)
@@ -129,7 +128,7 @@ class FullThrottleStoppableIndexingThread extends StoppableIndexingThread {
       }
       cusc.shutdownNow();
       cusc =
-          new ErrorLoggingConcurrentUpdateHttp2SolrClient.Builder(
+          new ErrorLoggingConcurrentUpdateSolrClient.Builder(
                   ((Http2SolrClient) clients.get(clientIndex)).getBaseURL(), httpClient)
               .withDefaultCollection(clients.get(clientIndex).getDefaultCollection())
               .withQueueSize(30)
@@ -165,31 +164,8 @@ class FullThrottleStoppableIndexingThread extends StoppableIndexingThread {
     throw new UnsupportedOperationException();
   }
 
-  static class ErrorLoggingConcurrentUpdateSolrClient extends ConcurrentUpdateSolrClient {
+  static class ErrorLoggingConcurrentUpdateSolrClient extends ConcurrentUpdateHttp2SolrClient {
     public ErrorLoggingConcurrentUpdateSolrClient(Builder builder) {
-      super(builder);
-    }
-
-    @Override
-    public void handleError(Throwable ex) {
-      log.warn("cusc error", ex);
-    }
-
-    static class Builder extends ConcurrentUpdateSolrClient.Builder {
-
-      public Builder(String baseSolrUrl) {
-        super(baseSolrUrl);
-      }
-
-      @Override
-      public ErrorLoggingConcurrentUpdateSolrClient build() {
-        return new ErrorLoggingConcurrentUpdateSolrClient(this);
-      }
-    }
-  }
-
-  static class ErrorLoggingConcurrentUpdateHttp2SolrClient extends ConcurrentUpdateHttp2SolrClient {
-    public ErrorLoggingConcurrentUpdateHttp2SolrClient(Builder builder) {
       super(builder);
     }
 
@@ -205,8 +181,8 @@ class FullThrottleStoppableIndexingThread extends StoppableIndexingThread {
       }
 
       @Override
-      public ErrorLoggingConcurrentUpdateHttp2SolrClient build() {
-        return new ErrorLoggingConcurrentUpdateHttp2SolrClient(this);
+      public ErrorLoggingConcurrentUpdateSolrClient build() {
+        return new ErrorLoggingConcurrentUpdateSolrClient(this);
       }
     }
   }

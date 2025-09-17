@@ -96,11 +96,12 @@ public class ConnectionReuseTest extends SolrCloudTestCase {
             .build();
       case 2:
         // For Http2 clients, create a shared Http2SolrClient to enable connection reuse
-        Http2SolrClient sharedHttp2Client = new Http2SolrClient.Builder(url.toString())
-            .withConnectionTimeout(30000, TimeUnit.MILLISECONDS)
-            .withIdleTimeout(60000, TimeUnit.MILLISECONDS)
-            .build();
-        
+        Http2SolrClient sharedHttp2Client =
+            new Http2SolrClient.Builder(url.toString())
+                .withConnectionTimeout(30000, TimeUnit.MILLISECONDS)
+                .withIdleTimeout(60000, TimeUnit.MILLISECONDS)
+                .build();
+
         var builder =
             new RandomizingCloudSolrClientBuilder(
                 Collections.singletonList(cluster.getZkServer().getZkAddress()), Optional.empty());

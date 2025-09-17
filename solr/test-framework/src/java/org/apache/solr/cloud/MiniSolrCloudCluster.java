@@ -761,8 +761,6 @@ public class MiniSolrCloudCluster {
   /**
    * creates a basic CloudSolrClient Builder that then can be customized by callers, for example by
    * specifying what collection they want to use.
-   *
-   * @return CloudSolrClient.Builder
    */
   public CloudSolrClient.Builder basicSolrClientBuilder() {
     CloudSolrClient.Builder builder =

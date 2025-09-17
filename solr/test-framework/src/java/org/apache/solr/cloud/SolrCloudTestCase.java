@@ -373,9 +373,10 @@ public class SolrCloudTestCase extends SolrTestCaseJ4 {
   protected static CoreStatusResponse.SingleCoreData getCoreStatus(Replica replica)
       throws IOException, SolrServerException {
     JettySolrRunner jetty = cluster.getReplicaJetty(replica);
-    try (SolrClient client = new Http2SolrClient.Builder(jetty.getBaseUrl().toString())
-        .withHttpClient(((CloudHttp2SolrClient) cluster.getSolrClient()).getHttpClient())
-        .build()) {
+    try (SolrClient client =
+        new Http2SolrClient.Builder(jetty.getBaseUrl().toString())
+            .withHttpClient(((CloudHttp2SolrClient) cluster.getSolrClient()).getHttpClient())
+            .build()) {
       return CoreAdminRequest.getCoreStatus(replica.getCoreName(), client);
     }
   }
