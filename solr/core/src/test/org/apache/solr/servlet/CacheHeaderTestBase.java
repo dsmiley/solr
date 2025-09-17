@@ -19,104 +19,77 @@ package org.apache.solr.servlet;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.client.methods.HttpHead;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.client.methods.HttpRequestBase;
-import org.apache.http.client.utils.URLEncodedUtils;
-import org.apache.http.message.BasicNameValuePair;
-import org.apache.http.util.EntityUtils;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.apache.solr.SolrJettyTestBase;
+import org.eclipse.jetty.client.Response;
+import org.eclipse.jetty.client.Result;
+import org.eclipse.jetty.client.StringRequestContent;
+import org.eclipse.jetty.http.HttpMethod;
+import org.eclipse.jetty.http.HttpStatus;
+import org.eclipse.jetty.http.MimeTypes;
+import org.eclipse.jetty.util.Fields;
+import org.eclipse.jetty.util.component.LifeCycle;
 import org.junit.Test;
 
 public abstract class CacheHeaderTestBase extends SolrJettyTestBase {
 
-  protected HttpRequestBase getSelectMethod(String method, String... params) {
-    HttpRequestBase m = null;
-
-    ArrayList<BasicNameValuePair> qparams = new ArrayList<>();
+  protected Response executeRequest(HttpMethod method, String... params) throws Exception {
+    Fields queryParams = new Fields();
     if (params.length == 0) {
-      qparams.add(new BasicNameValuePair("q", "solr"));
-      qparams.add(new BasicNameValuePair("qt", "standard"));
+      queryParams.add("q", "solr");
+      queryParams.add("qt", "standard");
     }
     for (int i = 0; i < params.length / 2; i++) {
-      qparams.add(new BasicNameValuePair(params[i * 2], params[i * 2 + 1]));
+      queryParams.add(params[i * 2], params[i * 2 + 1]);
     }
 
-    URI uri =
-        URI.create(
-            getBaseUrl()
-                + "/"
-                + DEFAULT_TEST_COLLECTION_NAME
-                + "/select?"
-                + URLEncodedUtils.format(qparams, StandardCharsets.UTF_8));
-
-    if ("GET".equals(method)) {
-      m = new HttpGet(uri);
-    } else if ("HEAD".equals(method)) {
-      m = new HttpHead(uri);
-    } else if ("POST".equals(method)) {
-      m = new HttpPost(uri);
-    }
-
-    return m;
+    String url = getBaseUrl() + "/" + DEFAULT_TEST_COLLECTION_NAME + "/select?" + 
+                 queryParams.encode(StandardCharsets.UTF_8);
+    
+    return getHttpClient().newRequest(url).method(method)
+        .timeout(10, TimeUnit.SECONDS)
+        .send();
   }
 
-  HttpRequestBase getUpdateMethod(String method, String... params) {
-    HttpRequestBase m = null;
-
-    ArrayList<BasicNameValuePair> qparams = new ArrayList<>();
+  protected Response executeUpdateRequest(HttpMethod method, String... params) throws Exception {
+    Fields queryParams = new Fields();
     for (int i = 0; i < params.length / 2; i++) {
-      qparams.add(new BasicNameValuePair(params[i * 2], params[i * 2 + 1]));
+      queryParams.add(params[i * 2], params[i * 2 + 1]);
     }
 
-    URI uri =
-        URI.create(
-            getBaseUrl()
-                + "/"
-                + DEFAULT_TEST_COLLECTION_NAME
-                + "/update?"
-                + URLEncodedUtils.format(qparams, StandardCharsets.UTF_8));
-
-    if ("GET".equals(method)) {
-      m = new HttpGet(uri);
-    } else if ("POST".equals(method)) {
-      m = new HttpPost(uri);
-    } else if ("HEAD".equals(method)) {
-      m = new HttpHead(uri);
-    }
-
-    return m;
+    String url = getBaseUrl() + "/" + DEFAULT_TEST_COLLECTION_NAME + "/update?" + 
+                 queryParams.encode(StandardCharsets.UTF_8);
+    
+    return getHttpClient().newRequest(url).method(method)
+        .timeout(10, TimeUnit.SECONDS)
+        .send();
   }
 
-  protected void checkResponseBody(String method, HttpResponse resp) throws Exception {
-    String responseBody = "";
-
-    if (resp.getEntity() != null) {
-      responseBody = EntityUtils.toString(resp.getEntity());
-    }
+  protected void checkResponseBody(String method, Response response) throws Exception {
+    String responseBody = response.getContentAsString();
 
     if ("GET".equals(method)) {
-      switch (resp.getStatusLine().getStatusCode()) {
-        case 200:
+      switch (response.getStatus()) {
+        case HttpStatus.OK_200:
           assertTrue(
               "Response body was empty for method " + method,
               responseBody != null && responseBody.length() > 0);
           break;
-        case 304:
+        case HttpStatus.NOT_MODIFIED_304:
           assertTrue(
               "Response body was not empty for method " + method,
               responseBody == null || responseBody.length() == 0);
           break;
-        case 412:
+        case HttpStatus.PRECONDITION_FAILED_412:
           assertTrue(
               "Response body was not empty for method " + method,
               responseBody == null || responseBody.length() == 0);
           break;
         default:
           System.err.println(responseBody);
-          assertEquals("Unknown request response", 0, resp.getStatusLine().getStatusCode());
+          assertEquals("Unknown request response", 0, response.getStatus());
       }
     }
     if ("HEAD".equals(method)) {

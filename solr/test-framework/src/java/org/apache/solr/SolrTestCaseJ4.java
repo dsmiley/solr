@@ -2593,7 +2593,8 @@ public abstract class SolrTestCaseJ4 extends SolrTestCase {
     }
 
     private static ClusterStateProvider createClusterStateProvider(MiniSolrCloudCluster cluster) {
-      if (cluster.getZkServer() != null) {
+      // Randomly choose between ZK-based and HTTP-based cluster state provider
+      if (cluster.getZkServer() != null && random().nextBoolean()) {
         // Use ZK-based cluster state provider
         return new ZkClientClusterStateProvider(
             Collections.singletonList(cluster.getZkServer().getZkAddress()), null);
