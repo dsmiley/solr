@@ -194,6 +194,10 @@ public class TraceUtils {
    * <p>This method configures OTLP over gRPC export to localhost:4317 by default, which is 
    * compatible with standard tracing server deployments (e.g., via Docker).
    * 
+   * <p><strong>Note:</strong> The opentelemetry module must be available on the test classpath
+   * for distributed tracing to work. If the module is not available, Solr will fall back to
+   * basic trace ID generation without external export.
+   * 
    * @param serviceName the service name to use for tracing (defaults to "solr-test" if null)
    * @param endpoint the OTLP endpoint URL (defaults to "http://localhost:4317" if null)
    */
