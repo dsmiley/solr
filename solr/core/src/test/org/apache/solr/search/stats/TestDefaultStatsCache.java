@@ -22,6 +22,7 @@ import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.SolrDocumentList;
 import org.apache.solr.common.SolrException;
 import org.apache.solr.common.params.ModifiableSolrParams;
+import org.apache.solr.util.tracing.TraceUtils;
 import org.junit.Test;
 
 // See: https://issues.apache.org/jira/browse/SOLR-12028 Tests cannot remove files on Windows
@@ -32,6 +33,11 @@ public class TestDefaultStatsCache extends BaseDistributedSearchTestCase {
   @Override
   public void distribSetUp() throws Exception {
     System.setProperty("metricsEnabled", "true");
+    
+    // Enable distributed tracing to an external tracing server
+    // This assumes a tracing server (e.g., Jaeger) is running on localhost:4317
+    TraceUtils.enableDistributedTracingForTests();
+    
     super.distribSetUp();
     System.setProperty("solr.statsCache", LocalStatsCache.class.getName());
   }
@@ -40,6 +46,9 @@ public class TestDefaultStatsCache extends BaseDistributedSearchTestCase {
   public void distribTearDown() throws Exception {
     super.distribTearDown();
     System.clearProperty("solr.statsCache");
+    
+    // Clean up distributed tracing configuration
+    TraceUtils.disableDistributedTracingForTests();
   }
 
   @Test

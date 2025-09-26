@@ -185,4 +185,61 @@ public class TraceUtils {
         tracer.spanBuilder(name).setSpanKind(kind).setAttribute(TAG_DB, collection);
     return spanBuilder.startSpan();
   }
+
+  /**
+   * Enables distributed tracing for tests by configuring OpenTelemetry to export traces to a 
+   * running tracing server (e.g., Jaeger, Zipkin). This method should be called in test setup 
+   * before starting Solr.
+   * 
+   * <p>This method configures OTLP over gRPC export to localhost:4317 by default, which is 
+   * compatible with standard tracing server deployments (e.g., via Docker).
+   * 
+   * @param serviceName the service name to use for tracing (defaults to "solr-test" if null)
+   * @param endpoint the OTLP endpoint URL (defaults to "http://localhost:4317" if null)
+   */
+  public static void enableDistributedTracingForTests(String serviceName, String endpoint) {
+    // Set default values if not provided
+    if (serviceName == null) {
+      serviceName = "solr-test";
+    }
+    if (endpoint == null) {
+      endpoint = "http://localhost:4317";
+    }
+    
+    // Configure OpenTelemetry properties for real tracing export
+    System.setProperty("otel.service.name", serviceName);
+    System.setProperty("otel.traces.exporter", "otlp");
+    System.setProperty("otel.exporter.otlp.protocol", "grpc");
+    System.setProperty("otel.exporter.otlp.endpoint", endpoint);
+    System.setProperty("otel.traces.sampler", "always_on");
+    System.setProperty("otel.propagators", "tracecontext,baggage");
+    
+    // Disable metrics and logs exporters to focus on traces
+    System.setProperty("otel.metrics.exporter", "none");
+    System.setProperty("otel.logs.exporter", "none");
+  }
+  
+  /**
+   * Convenience method to enable distributed tracing with default settings.
+   * Uses service name "solr-test" and OTLP endpoint "http://localhost:4317".
+   */
+  public static void enableDistributedTracingForTests() {
+    enableDistributedTracingForTests(null, null);
+  }
+  
+  /**
+   * Disables distributed tracing by clearing the OpenTelemetry system properties
+   * that were set by {@link #enableDistributedTracingForTests(String, String)}.
+   * This method should be called in test teardown.
+   */
+  public static void disableDistributedTracingForTests() {
+    System.clearProperty("otel.service.name");
+    System.clearProperty("otel.traces.exporter");
+    System.clearProperty("otel.exporter.otlp.protocol");
+    System.clearProperty("otel.exporter.otlp.endpoint");
+    System.clearProperty("otel.traces.sampler");
+    System.clearProperty("otel.propagators");
+    System.clearProperty("otel.metrics.exporter");
+    System.clearProperty("otel.logs.exporter");
+  }
 }
