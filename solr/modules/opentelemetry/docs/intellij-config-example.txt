@@ -1,0 +1,71 @@
+# IntelliJ Run Configuration Example
+
+This shows what your IntelliJ IDEA Run Configuration should look like with the OpenTelemetry Java Agent configured.
+
+## Visual Representation of IntelliJ Configuration Dialog
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ Run/Debug Configurations                                    [×] [-] │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                       │
+│ ┌─────────────────┐  ┌───────────────────────────────────────────┐ │
+│ │ Templates       │  │ Configuration                              │ │
+│ │ ├─ JUnit        │  │                                            │ │
+│ │ ├─ Application  │  │ Name: TestDefaultStatsCache                │ │
+│ │ └─ ...          │  │                                            │ │
+│ │                 │  │ Test kind: Class                           │ │
+│ │ JUnit           │  │ Class: o.a.s.search.stats.TestDefaultStat…│ │
+│ │ ├─ All in solr  │  │                                            │ │
+│ │ ├─ TestDefault…│  │ VM options:                                │ │
+│ │ └─ ...          │  │ ┌──────────────────────────────────────┐  │ │
+│ │                 │  │ │ -javaagent:solr/modules/opentelemetr…│  │ │
+│ │                 │  │ │ -Dotel.javaagent.configuration-file=…│  │ │
+│ └─────────────────┘  │ └──────────────────────────────────────┘  │ │
+│                      │                                            │ │
+│                      │ Working directory:                         │ │
+│                      │ /home/user/solr                            │ │
+│                      │                                            │ │
+│                      │ Use classpath of module:                   │ │
+│                      │ solr.modules.opentelemetry.test            │ │
+│                      │                                            │ │
+│                      │ Shorten command line:                      │ │
+│                      │ ▼ None                                     │ │
+│                      │                                            │ │
+│                      └────────────────────────────────────────────┘ │
+│                                                                       │
+│                                       [Apply]  [Cancel]  [OK]        │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+## Key Fields to Configure
+
+### VM Options (expand to see full paths)
+```
+-javaagent:solr/modules/opentelemetry/build/agent/opentelemetry-javaagent.jar
+-Dotel.javaagent.configuration-file=solr/modules/opentelemetry/otel-agent-config.properties
+```
+
+### Alternative: Using Absolute Paths
+If IntelliJ has trouble with relative paths, use absolute:
+```
+-javaagent:/absolute/path/to/solr/modules/opentelemetry/build/agent/opentelemetry-javaagent.jar
+-Dotel.javaagent.configuration-file=/absolute/path/to/solr/modules/opentelemetry/otel-agent-config.properties
+```
+
+## Testing the Configuration
+
+After configuring and running your test, you should see output like:
+
+```
+[otel.javaagent 2025-01-01 12:00:00:000] OpenTelemetry Javaagent enabled
+[otel.javaagent 2025-01-01 12:00:00:001] Configuration file: /path/to/otel-agent-config.properties
+[otel.javaagent 2025-01-01 12:00:00:002] Service name: solr-test
+[otel.javaagent 2025-01-01 12:00:00:003] Traces exporter: otlp
+
+... test execution ...
+
+Traces exported to http://localhost:4317
+```
+
+Then check Jaeger UI at http://localhost:16686 for the "solr-test" service.
