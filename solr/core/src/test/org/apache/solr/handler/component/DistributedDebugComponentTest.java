@@ -38,6 +38,7 @@ import org.apache.solr.common.SolrInputDocument;
 import org.apache.solr.common.params.ShardParams;
 import org.apache.solr.common.util.NamedList;
 import org.apache.solr.response.SolrQueryResponse;
+import org.apache.solr.util.ErrorLogMuter;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -413,30 +414,31 @@ public class DistributedDebugComponentTest extends SolrJettyTestBase {
     query.set("shards", badShard + "," + shard2 + "," + shard1);
 
     // Submit the requests enough times to get failures when code is buggy
-    for (int i = 0; i < (TEST_NIGHTLY ? 500 : 200); i++) {
-      // verify that the request would fail if shards.tolerant=false
-      query.set(ShardParams.SHARDS_TOLERANT, "false");
-      ignoreException("Server refused connection");
-      expectThrows(SolrException.class, () -> collection1.query(query));
+    try (ErrorLogMuter errors = ErrorLogMuter.substring("Connection refused")) {
+      assert errors != null;
+      for (int i = 0; i < (TEST_NIGHTLY ? 500 : 200); i++) {
+        // verify that the request would fail if shards.tolerant=false
+        query.set(ShardParams.SHARDS_TOLERANT, "false");
+        expectThrows(SolrException.class, () -> collection1.query(query));
 
-      // verify that the request would succeed if shards.tolerant=true
-      query.set(ShardParams.SHARDS_TOLERANT, "true");
-      QueryResponse response = collection1.query(query);
-      assertTrue(
-          (Boolean)
-              response
-                  .getResponseHeader()
-                  .get(SolrQueryResponse.RESPONSE_HEADER_PARTIAL_RESULTS_KEY));
-      @SuppressWarnings("unchecked")
-      NamedList<String> badShardTrack =
-          (((NamedList<NamedList<NamedList<String>>>) response.getDebugMap().get("track"))
-                  .get("EXECUTE_QUERY"))
-              .get(badShard);
-      assertEquals("Unexpected response size for shard", 1, badShardTrack.size());
-      Entry<String, String> exception = badShardTrack.iterator().next();
-      assertEquals("Expected key 'Exception' not found", "Exception", exception.getKey());
-      assertNotNull("Exception message should not be null", exception.getValue());
-      unIgnoreException("Server refused connection");
+        // verify that the request would succeed if shards.tolerant=true
+        query.set(ShardParams.SHARDS_TOLERANT, "true");
+        QueryResponse response = collection1.query(query);
+        assertTrue(
+            (Boolean)
+                response
+                    .getResponseHeader()
+                    .get(SolrQueryResponse.RESPONSE_HEADER_PARTIAL_RESULTS_KEY));
+        @SuppressWarnings("unchecked")
+        NamedList<String> badShardTrack =
+            (((NamedList<NamedList<NamedList<String>>>) response.getDebugMap().get("track"))
+                    .get("EXECUTE_QUERY"))
+                .get(badShard);
+        assertEquals("Unexpected response size for shard", 1, badShardTrack.size());
+        Entry<String, String> exception = badShardTrack.iterator().next();
+        assertEquals("Expected key 'Exception' not found", "Exception", exception.getKey());
+        assertNotNull("Exception message should not be null", exception.getValue());
+      }
     }
   }
 
