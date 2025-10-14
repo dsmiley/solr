@@ -216,14 +216,15 @@
             <Arg>
               <New class="org.eclipse.jetty.deploy.providers.ContextProvider">
                 <Set name="EnvironmentName">core</Set>
-                <Set name="monitoredDirName"><Property name="jetty.base" default="."/>/contexts</Set>
+                <Set name="monitoredDirName"><Property name="jetty.base"/>/contexts</Set>
                 <Set name="scanInterval">0</Set>
+                <Set name="defaultsDescriptor"><Property name="jetty.base"/>/etc/webdefault.xml</Set>
               </New>
             </Arg>
           </Call>
-          
+
           <!-- Add a customize step to the deployment lifecycle -->
-          <!-- uncomment and replace DebugBinding with your extended AppLifeCycle.Binding class 
+          <!-- uncomment and replace DebugBinding with your extended AppLifeCycle.Binding class
           <Call name="insertLifeCycleNode">
             <Arg>deployed</Arg>
             <Arg>starting</Arg>
@@ -237,9 +238,9 @@
             </Arg>
           </Call>
           -->
-          
+
         </New>
       </Arg>
     </Call>
-    
+
 </Configure>
