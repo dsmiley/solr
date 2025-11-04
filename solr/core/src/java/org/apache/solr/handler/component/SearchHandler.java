@@ -48,18 +48,24 @@ import org.apache.lucene.index.ExitableDirectoryReader;
 import org.apache.lucene.search.TotalHits;
 import org.apache.solr.client.solrj.SolrRequest.SolrRequestType;
 import org.apache.solr.client.solrj.SolrServerException;
+import org.apache.solr.client.solrj.routing.ReplicaListTransformer;
+import org.apache.solr.cloud.CloudDescriptor;
 import org.apache.solr.cloud.ZkController;
 import org.apache.solr.common.SolrDocumentList;
 import org.apache.solr.common.SolrException;
+import org.apache.solr.common.cloud.Replica;
+import org.apache.solr.common.cloud.ZkCoreNodeProps;
 import org.apache.solr.common.params.CommonParams;
 import org.apache.solr.common.params.CursorMarkParams;
 import org.apache.solr.common.params.ModifiableSolrParams;
 import org.apache.solr.common.params.ShardParams;
+import org.apache.solr.common.params.SolrParams;
 import org.apache.solr.common.util.NamedList;
 import org.apache.solr.common.util.SimpleOrderedMap;
 import org.apache.solr.common.util.StrUtils;
 import org.apache.solr.core.CloseHook;
 import org.apache.solr.core.CoreContainer;
+import org.apache.solr.core.CoreDescriptor;
 import org.apache.solr.core.PluginInfo;
 import org.apache.solr.core.SolrCore;
 import org.apache.solr.handler.RequestHandlerBase;
@@ -316,19 +322,128 @@ public class SearchHandler extends RequestHandlerBase
     return isDistrib;
   }
 
+  /**
+   * Determines the ReplicaSource for this distributed request. This method can be overridden by
+   * subclasses to force distributed search behavior, even for single-shard collections.
+   *
+   * <p>By default, this method returns null if the request should not be distributed (e.g., for
+   * single shard that can be short-circuited), or a ReplicaSource for distributed requests.
+   *
+   * @param rb The ResponseBuilder containing request state
+   * @return A ReplicaSource if this request should be distributed, or null to process locally
+   */
+  protected ReplicaSource getReplicaSource(ResponseBuilder rb) {
+    if (!rb.isDistrib) {
+      return null;
+    }
+
+    final SolrQueryRequest req = rb.req;
+    final SolrParams params = req.getParams();
+    final String shards = params.get(ShardParams.SHARDS);
+
+    CoreContainer cc = req.getCoreContainer();
+    CoreDescriptor coreDescriptor = req.getCore().getCoreDescriptor();
+    CloudDescriptor cloudDescriptor = req.getCloudDescriptor();
+    ZkController zkController = cc.getZkController();
+
+    if (zkController != null) {
+      boolean onlyNrt = Boolean.TRUE == req.getContext().get(HttpShardHandler.ONLY_NRT_REPLICAS);
+
+      // Get the ReplicaListTransformer - cast to HttpShardHandlerFactory if available
+      ReplicaListTransformer replicaListTransformer = null;
+      if (shardHandlerFactory instanceof HttpShardHandlerFactory) {
+        replicaListTransformer =
+            ((HttpShardHandlerFactory) shardHandlerFactory).getReplicaListTransformer(req);
+      }
+
+      CloudReplicaSource.Builder builder =
+          new CloudReplicaSource.Builder()
+              .params(params)
+              .zkStateReader(zkController.getZkStateReader())
+              .allowListUrlChecker(cc.getAllowListUrlChecker())
+              .collection(cloudDescriptor.getCollectionName())
+              .onlyNrt(onlyNrt);
+
+      if (replicaListTransformer != null) {
+        builder.replicaListTransformer(replicaListTransformer);
+      }
+
+      ReplicaSource replicaSource = builder.build();
+
+      String[] slices =
+          replicaSource.getSliceNames().toArray(new String[replicaSource.getSliceCount()]);
+
+      // Check if we can short-circuit (process locally without distribution)
+      if (canShortCircuit(slices, onlyNrt, params, cloudDescriptor)) {
+        rb.shortCircuitedURL =
+            ZkCoreNodeProps.getCoreUrl(zkController.getBaseUrl(), coreDescriptor.getName());
+        return null;
+      }
+
+      return replicaSource;
+    } else if (shards != null) {
+      // Standalone mode with explicit shards parameter
+      return new StandaloneReplicaSource.Builder()
+          .allowListUrlChecker(cc.getAllowListUrlChecker())
+          .shards(shards)
+          .build();
+    }
+
+    return null;
+  }
+
+  /**
+   * Determines if a request can be short-circuited to process locally instead of being distributed.
+   * This is an optimization for single-shard requests where the current node hosts that shard.
+   *
+   * @param slices The slices involved in the request
+   * @param onlyNrtReplicas Whether only NRT replicas should be used
+   * @param params The request parameters
+   * @param cloudDescriptor The cloud descriptor for this core
+   * @return true if the request can be processed locally, false otherwise
+   */
+  protected boolean canShortCircuit(
+      String[] slices,
+      boolean onlyNrtReplicas,
+      SolrParams params,
+      CloudDescriptor cloudDescriptor) {
+    // Are we hosting the shard that this request is for, and are we active? If so, then handle it
+    // ourselves and make it a non-distributed request.
+    String ourSlice = cloudDescriptor.getShardId();
+    String ourCollection = cloudDescriptor.getCollectionName();
+    // Some requests may only be fulfilled by replicas of type Replica.Type.NRT
+    if (slices.length == 1
+        && slices[0] != null
+        && (slices[0].equals(ourSlice)
+            || slices[0].equals(
+                ourCollection + "_" + ourSlice)) // handle the <collection>_<slice> format
+        && cloudDescriptor.getLastPublished() == Replica.State.ACTIVE
+        && (!onlyNrtReplicas || cloudDescriptor.getReplicaType() == Replica.Type.NRT)) {
+      // currently just a debugging parameter to check distrib search on a single node
+      boolean shortCircuit = params.getBool("shortCircuit", true);
+
+      String targetHandler = params.get(ShardParams.SHARDS_QT);
+      // if a different handler is specified, don't short-circuit
+      shortCircuit = shortCircuit && targetHandler == null;
+
+      return shortCircuit;
+    }
+    return false;
+  }
+
   public ShardHandler getAndPrepShardHandler(SolrQueryRequest req, ResponseBuilder rb) {
     ShardHandler shardHandler = null;
 
     CoreContainer cc = req.getCoreContainer();
     boolean isZkAware = cc.isZooKeeperAware();
 
-    if (rb.isDistrib) {
+    ReplicaSource replicaSource = getReplicaSource(rb);
+    if (replicaSource != null) {
+      rb.isDistrib = true;
       shardHandler = shardHandlerFactory.getShardHandler();
-      shardHandler.prepDistributed(rb);
-      if (!rb.isDistrib) {
-        // request is not distributed after all and so the shard handler is not needed
-        shardHandler = null;
-      }
+      shardHandler.prepDistributed(rb, replicaSource);
+    } else {
+      rb.isDistrib = false;
     }
 
     if (isZkAware) {
