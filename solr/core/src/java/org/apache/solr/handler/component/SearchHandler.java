@@ -463,12 +463,15 @@ public class SearchHandler extends RequestHandlerBase
     CoreContainer cc = req.getCoreContainer();
     boolean isZkAware = cc.isZooKeeperAware();
 
+    // Get the ReplicaSource - this will be null if we should process locally (e.g., short-circuit)
     ReplicaSource replicaSource = getReplicaSource(rb);
     if (replicaSource != null) {
+      // Confirm distribution is enabled (getReplicaSource already checked rb.isDistrib)
       rb.isDistrib = true;
       shardHandler = shardHandlerFactory.getShardHandler();
       shardHandler.prepDistributed(rb, replicaSource);
     } else {
+      // No ReplicaSource means we're processing locally (either not distributed or short-circuited)
       rb.isDistrib = false;
     }
 

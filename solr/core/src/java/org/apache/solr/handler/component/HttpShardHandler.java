@@ -572,8 +572,13 @@ public class HttpShardHandler extends ShardHandler {
 
   /**
    * Private helper for the deprecated prepDistributed method. This logic has been moved to
-   * SearchHandler.canShortCircuit().
+   * SearchHandler.canShortCircuit(). This duplication is intentional to maintain backward
+   * compatibility for any code that still calls the deprecated prepDistributed(ResponseBuilder)
+   * method without going through SearchHandler.
+   *
+   * @deprecated This method is only used by the deprecated prepDistributed(ResponseBuilder) method
    */
+  @Deprecated
   private boolean canShortCircuit(
       String[] slices,
       boolean onlyNrtReplicas,
