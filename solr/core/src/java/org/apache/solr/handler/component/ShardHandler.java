@@ -36,8 +36,25 @@ public abstract class ShardHandler {
    * requests.
    *
    * @param rb provides access to request and response state.
+   * @deprecated Use {@link #prepDistributed(ResponseBuilder, ReplicaSource)} instead
    */
-  public abstract void prepDistributed(ResponseBuilder rb);
+  @Deprecated
+  public void prepDistributed(ResponseBuilder rb) {
+    // Default implementation for backward compatibility
+    // Subclasses should override the new method instead
+  }
+
+  /**
+   * Bootstraps any data structures needed by the ShardHandler to execute or track outgoing
+   * requests. This method receives a ReplicaSource that defines the shards to query.
+   *
+   * @param rb provides access to request and response state.
+   * @param replicaSource the source of replica information for this distributed request
+   */
+  public void prepDistributed(ResponseBuilder rb, ReplicaSource replicaSource) {
+    // Default implementation delegates to old method for backward compatibility
+    prepDistributed(rb);
+  }
 
   /**
    * Sends a request (represented by <code>sreq</code>) to the specified shard.
