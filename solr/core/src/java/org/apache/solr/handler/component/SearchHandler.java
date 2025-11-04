@@ -329,6 +329,32 @@ public class SearchHandler extends RequestHandlerBase
    * <p>By default, this method returns null if the request should not be distributed (e.g., for
    * single shard that can be short-circuited), or a ReplicaSource for distributed requests.
    *
+   * <p>Example usage - to force distributed behavior for all requests:
+   *
+   * <pre>{@code
+   * public class MySearchHandler extends SearchHandler {
+   *   @Override
+   *   protected ReplicaSource getReplicaSource(ResponseBuilder rb) {
+   *     // Get the default ReplicaSource
+   *     ReplicaSource replicaSource = super.getReplicaSource(rb);
+   *
+   *     // If it's null (would be short-circuited), force distributed behavior
+   *     if (replicaSource == null && rb.isDistrib) {
+   *       // Recreate the ReplicaSource by calling the parent logic but overriding canShortCircuit
+   *       // Or construct it manually as needed
+   *     }
+   *     return replicaSource;
+   *   }
+   *
+   *   @Override
+   *   protected boolean canShortCircuit(String[] slices, boolean onlyNrtReplicas,
+   *                                      SolrParams params, CloudDescriptor cloudDescriptor) {
+   *     // Always return false to force distributed behavior
+   *     return false;
+   *   }
+   * }
+   * }</pre>
+   *
    * @param rb The ResponseBuilder containing request state
    * @return A ReplicaSource if this request should be distributed, or null to process locally
    */
