@@ -77,6 +77,14 @@ public abstract class SearchComponent implements SolrInfoBean, NamedListInitiali
   public void finishStage(ResponseBuilder rb) {}
 
   /**
+   * A component can force SearchHandler to run in distributed/coordinator mode, despite only having
+   * 1 shard.  This adds another "hop" to the search process.
+   */
+  protected boolean isForceDistributed() {
+    return false;
+  }
+
+  /**
    * Sets the name of the SearchComponent. The name of the component is usually the name defined for
    * it in the configuration.
    */
