@@ -33,8 +33,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import net.jcip.annotations.NotThreadSafe;
 import org.apache.solr.client.solrj.SolrRequest;
 import org.apache.solr.client.solrj.SolrResponse;
-import org.apache.solr.client.solrj.impl.Http2SolrClient;
-import org.apache.solr.client.solrj.impl.LBHttp2SolrClient;
+import org.apache.solr.client.solrj.impl.LBAsyncSolrClient;
 import org.apache.solr.client.solrj.impl.LBSolrClient;
 import org.apache.solr.client.solrj.request.QueryRequest;
 import org.apache.solr.client.solrj.routing.NoOpReplicaListTransformer;
@@ -50,6 +49,7 @@ import org.apache.solr.common.params.ShardParams;
 import org.apache.solr.common.params.SolrParams;
 import org.apache.solr.common.util.NamedList;
 import org.apache.solr.common.util.StrUtils;
+import org.apache.solr.core.CoreContainer;
 import org.apache.solr.core.CoreDescriptor;
 import org.apache.solr.request.SolrQueryRequest;
 import org.apache.solr.request.SolrRequestInfo;
@@ -98,7 +98,7 @@ public class HttpShardHandler extends ShardHandler {
   private final AtomicBoolean canceled = new AtomicBoolean(false);
 
   private final Map<String, List<String>> shardToURLs;
-  protected LBHttp2SolrClient<Http2SolrClient> lbClient;
+  protected LBAsyncSolrClient lbClient;
 
   public HttpShardHandler(HttpShardHandlerFactory httpShardHandlerFactory) {
     this.httpShardHandlerFactory = httpShardHandlerFactory;
@@ -247,7 +247,7 @@ public class HttpShardHandler extends ShardHandler {
    * @param sreq the request to make
    * @param shard the shard to address
    * @param params request parameters
-   * @param lbReq the load balanced request suitable for LBHttp2SolrClient
+   * @param lbReq the load balanced request
    * @param ssr the response collector part 1
    * @param srsp the shard response collector
    * @param startTimeNS the time at which the request was initiated, likely just prior to calling
@@ -403,6 +403,71 @@ public class HttpShardHandler extends ShardHandler {
   }
 
   @Override
+  public void prepDistributed(ResponseBuilder rb, ReplicaSource replicaSource) {
+    final SolrQueryRequest req = rb.req;
+    final SolrParams params = req.getParams();
+    final String shards = params.get(ShardParams.SHARDS);
+
+    CoreContainer cc = req.getCoreContainer();
+    ZkController zkController = cc.getZkController();
+    AllowListUrlChecker urlChecker = cc.getAllowListUrlChecker();
+
+    if (shards != null
+        && zkController == null
+        && urlChecker.isEnabled()
+        && !urlChecker.hasExplicitAllowList()) {
+      throw new SolrException(
+          SolrException.ErrorCode.FORBIDDEN,
+          "solr.xml property '"
+              + AllowListUrlChecker.URL_ALLOW_LIST
+              + "' not configured but required (in lieu of ZkController and ClusterState) when using the '"
+              + ShardParams.SHARDS
+              + "' parameter. "
+              + AllowListUrlChecker.SET_SOLR_DISABLE_URL_ALLOW_LIST_CLUE);
+    }
+
+    rb.slices = replicaSource.getSliceNames().toArray(new String[replicaSource.getSliceCount()]);
+
+    if (zkController != null && !getShardsTolerantAsBool(req)) {
+      for (int i = 0; i < rb.slices.length; i++) {
+        if (replicaSource.getReplicasBySlice(i).isEmpty()) {
+          final ReplicaSource allActiveReplicaSource =
+              new CloudReplicaSource.Builder()
+                  .params(params)
+                  .zkStateReader(zkController.getZkStateReader())
+                  .allowListUrlChecker(AllowListUrlChecker.ALLOW_ALL)
+                  .replicaListTransformer(NoOpReplicaListTransformer.INSTANCE)
+                  .collection(req.getCloudDescriptor().getCollectionName())
+                  .onlyNrt(false)
+                  .build();
+          final String adjective =
+              (allActiveReplicaSource.getReplicasBySlice(i).isEmpty() ? "active" : "eligible");
+          // stop the check when there are no replicas available for a shard
+          // todo fix use of slices[i] which can be null if user specified urls in shards param
+          throw new SolrException(
+              SolrException.ErrorCode.SERVICE_UNAVAILABLE,
+              "no " + adjective + " servers hosting shard: " + rb.slices[i]);
+        }
+      }
+    }
+
+    rb.shards = new String[rb.slices.length];
+    for (int i = 0; i < rb.slices.length; i++) {
+      rb.shards[i] = createSliceShardsStr(replicaSource.getReplicasBySlice(i));
+    }
+
+    String shards_rows = params.get(ShardParams.SHARDS_ROWS);
+    if (shards_rows != null) {
+      rb.shards_rows = Integer.parseInt(shards_rows);
+    }
+    String shards_start = params.get(ShardParams.SHARDS_START);
+    if (shards_start != null) {
+      rb.shards_start = Integer.parseInt(shards_start);
+    }
+  }
+
+  @Override
+  @Deprecated
   public void prepDistributed(ResponseBuilder rb) {
     final SolrQueryRequest req = rb.req;
     final SolrParams params = req.getParams();
@@ -504,6 +569,15 @@ public class HttpShardHandler extends ShardHandler {
     return String.join("|", shardUrls);
   }
 
+  /**
+   * Private helper for the deprecated prepDistributed method. This logic has been moved to
+   * SearchHandler.canShortCircuit(). This duplication is intentional to maintain backward
+   * compatibility for any code that still calls the deprecated prepDistributed(ResponseBuilder)
+   * method without going through SearchHandler.
+   *
+   * @deprecated This method is only used by the deprecated prepDistributed(ResponseBuilder) method
+   */
+  @Deprecated
   private boolean canShortCircuit(
       String[] slices,
       boolean onlyNrtReplicas,
