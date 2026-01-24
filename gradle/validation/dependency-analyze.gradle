@@ -17,19 +17,29 @@
 
 // This adds gradle-dependency-analyze validation of project dependencies
 // https://github.com/gradle-dependency-analyze/gradle-dependency-analyze
+// Related issue: https://github.com/gradle-dependency-analyze/gradle-dependency-analyze/issues/351
+
+// Configuration: ignoreUsedUndeclared
+// When enabled, used-but-undeclared dependencies (typically from 'api' scoped transitive dependencies)
+// will only generate warnings instead of failing the build.
+// This is useful for dependencies that come from 'api' scoped dependencies where strictness is not warranted.
+// Set this to true in gradle.properties or via -PignoreUsedUndeclared=true
+def ignoreUsedUndeclared = project.findProperty('ignoreUsedUndeclared')?.toBoolean() ?: false
 
 allprojects { prj ->
   plugins.withId("java", {
     prj.apply plugin: libs.plugins.cutterslade.analyze.get().pluginId
 
     analyzeClassesDependencies {
-      warnUsedUndeclared = false // means fail build if UsedUndeclared found
+      // When ignoreUsedUndeclared is true, only warn (don't fail) for used-but-undeclared dependencies
+      warnUsedUndeclared = ignoreUsedUndeclared ? true : false
       warnUnusedDeclared = false // means fail build if UnusedDeclared found
       logDependencyInformationToFiles = true
     }
 
     analyzeTestClassesDependencies {
-      warnUsedUndeclared = false // means fail build if UsedUndeclared found
+      // When ignoreUsedUndeclared is true, only warn (don't fail) for used-but-undeclared dependencies
+      warnUsedUndeclared = ignoreUsedUndeclared ? true : false
       warnUnusedDeclared = false // means fail build if UnusedDeclared found
       logDependencyInformationToFiles = true
     }
