@@ -32,14 +32,14 @@ allprojects { prj ->
 
     analyzeClassesDependencies {
       // When ignoreUsedUndeclared is true, only warn (don't fail) for used-but-undeclared dependencies
-      warnUsedUndeclared = ignoreUsedUndeclared ? true : false
+      warnUsedUndeclared = ignoreUsedUndeclared
       warnUnusedDeclared = false // means fail build if UnusedDeclared found
       logDependencyInformationToFiles = true
     }
 
     analyzeTestClassesDependencies {
       // When ignoreUsedUndeclared is true, only warn (don't fail) for used-but-undeclared dependencies
-      warnUsedUndeclared = ignoreUsedUndeclared ? true : false
+      warnUsedUndeclared = ignoreUsedUndeclared
       warnUnusedDeclared = false // means fail build if UnusedDeclared found
       logDependencyInformationToFiles = true
     }
