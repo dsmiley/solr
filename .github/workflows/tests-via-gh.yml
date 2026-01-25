@@ -3,6 +3,9 @@ name: Solr Tests via GitHub
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Run Solr Tests
