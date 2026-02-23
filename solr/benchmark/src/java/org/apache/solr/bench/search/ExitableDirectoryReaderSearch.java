@@ -24,8 +24,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import org.apache.solr.bench.Docs;
-import org.apache.solr.bench.MiniClusterState;
-import org.apache.solr.client.solrj.request.CollectionAdminRequest;
+import org.apache.solr.bench.SolrBenchState;
 import org.apache.solr.client.solrj.request.QueryRequest;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.SolrInputDocument;
@@ -56,8 +55,6 @@ import org.openjdk.jmh.infra.Blackhole;
 @Threads(value = 1)
 public class ExitableDirectoryReaderSearch {
 
-  static final String COLLECTION = "c1";
-
   @State(Scope.Benchmark)
   public static class BenchState {
 
@@ -67,45 +64,51 @@ public class ExitableDirectoryReaderSearch {
     int WORDS = NUM_DOCS / 100;
 
     @Setup(Level.Trial)
-    public void setupTrial(MiniClusterState.MiniClusterBenchState miniClusterState)
-        throws Exception {
-      miniClusterState.setUseHttp1(true);
-      System.setProperty("documentCache.enabled", "false");
-      System.setProperty("queryResultCache.enabled", "false");
-      System.setProperty("filterCache.enabled", "false");
-      System.setProperty("miniClusterBaseDir", "build/work/mini-cluster");
-      // create a lot of small segments
-      System.setProperty("segmentsPerTier", "200");
-      System.setProperty("maxBufferedDocs", "100");
+    public void setupTrial(SolrBenchState solrBenchState) throws Exception {
 
-      miniClusterState.startMiniCluster(1);
-      log("######### Creating index ...");
-      miniClusterState.createCollection(COLLECTION, 1, 1);
-      // create a lot of large-ish fields to scan positions
-      Docs docs =
-          Docs.docs(1234567890L)
-              .field("id", integers().incrementing())
-              .field("f1_ts", strings().alpha().maxCardinality(WORDS).ofLengthBetween(3, 10))
-              .field(
-                  "f2_ts", strings().alpha().maxCardinality(WORDS).multi(50).ofLengthBetween(3, 10))
-              .field(
-                  "f3_ts", strings().alpha().maxCardinality(WORDS).multi(50).ofLengthBetween(3, 10))
-              .field(
-                  "f4_ts", strings().alpha().maxCardinality(WORDS).multi(50).ofLengthBetween(3, 10))
-              .field(
-                  "f5_ts", strings().alpha().maxCardinality(WORDS).multi(50).ofLengthBetween(3, 10))
-              .field(
-                  "f6_ts", strings().alpha().maxCardinality(WORDS).multi(50).ofLengthBetween(3, 10))
-              .field(
-                  "f7_ts", strings().alpha().maxCardinality(WORDS).multi(50).ofLengthBetween(3, 10))
-              .field(
-                  "f8_ts", strings().alpha().maxCardinality(WORDS).multi(50).ofLengthBetween(3, 10))
-              .field(
-                  "f9_ts",
-                  strings().alpha().maxCardinality(WORDS).multi(50).ofLengthBetween(3, 10));
-      miniClusterState.index(COLLECTION, docs, NUM_DOCS, true);
-      miniClusterState.forceMerge(COLLECTION, 200);
-      miniClusterState.dumpCoreInfo();
+      solrBenchState.start(1, 1, 1);
+      if (solrBenchState.createCollection(
+          "cloud-minimal",
+          Map.of(
+              "documentCache.enabled", "false",
+              "queryResultCache.enabled", "false",
+              "filterCache.enabled", "false",
+              "segmentsPerTier", "200",
+              "maxBufferedDocs", "100"))) {
+        log("######### Creating index ...");
+        // create a lot of large-ish fields to scan positions
+        Docs docs =
+            Docs.docs(1234567890L)
+                .field("id", integers().incrementing())
+                .field("f1_ts", strings().alpha().maxCardinality(WORDS).ofLengthBetween(3, 10))
+                .field(
+                    "f2_ts",
+                    strings().alpha().maxCardinality(WORDS).multi(50).ofLengthBetween(3, 10))
+                .field(
+                    "f3_ts",
+                    strings().alpha().maxCardinality(WORDS).multi(50).ofLengthBetween(3, 10))
+                .field(
+                    "f4_ts",
+                    strings().alpha().maxCardinality(WORDS).multi(50).ofLengthBetween(3, 10))
+                .field(
+                    "f5_ts",
+                    strings().alpha().maxCardinality(WORDS).multi(50).ofLengthBetween(3, 10))
+                .field(
+                    "f6_ts",
+                    strings().alpha().maxCardinality(WORDS).multi(50).ofLengthBetween(3, 10))
+                .field(
+                    "f7_ts",
+                    strings().alpha().maxCardinality(WORDS).multi(50).ofLengthBetween(3, 10))
+                .field(
+                    "f8_ts",
+                    strings().alpha().maxCardinality(WORDS).multi(50).ofLengthBetween(3, 10))
+                .field(
+                    "f9_ts",
+                    strings().alpha().maxCardinality(WORDS).multi(50).ofLengthBetween(3, 10));
+        solrBenchState.index(docs, NUM_DOCS, true);
+        solrBenchState.forceMerge(200);
+      }
+      solrBenchState.dumpCoreInfo();
     }
 
     // this adds significant processing time to the checking of query limits
@@ -116,13 +119,12 @@ public class ExitableDirectoryReaderSearch {
     private static final String matchExpression = "ExitableTermsEnum:-1";
 
     @Setup(Level.Iteration)
-    public void setupQueries(MiniClusterState.MiniClusterBenchState state) throws Exception {
+    public void setupQueries(SolrBenchState solrBenchState) throws Exception {
       if (verifyEDRInUse) {
         TestInjection.queryTimeout = new CallerSpecificQueryLimit(Set.of(matchExpression));
       }
       // reload collection to force searcher / reader refresh
-      CollectionAdminRequest.Reload reload = CollectionAdminRequest.reloadCollection(COLLECTION);
-      state.client.request(reload);
+      solrBenchState.reloadCollection();
 
       queryFields =
           Docs.docs(1234567890L)
@@ -153,26 +155,22 @@ public class ExitableDirectoryReaderSearch {
   }
 
   private static ModifiableSolrParams createInitialParams() {
-    ModifiableSolrParams params =
-        MiniClusterState.params("rows", "100", "timeAllowed", "1000", "fl", "*");
-    return params;
+    return SolrBenchState.params("rows", "100", "timeAllowed", "1000", "fl", "*");
   }
 
   @Benchmark
-  public void testShortQuery(
-      MiniClusterState.MiniClusterBenchState miniClusterState, Blackhole bh, BenchState state)
+  public void testShortQuery(SolrBenchState solrBenchState, Blackhole bh, BenchState state)
       throws Exception {
     SolrInputDocument queryDoc = state.queryFields.inputDocument();
     ModifiableSolrParams params = createInitialParams();
     params.set("q", "f1_ts:" + queryDoc.getFieldValue("f1_ts").toString());
     QueryRequest queryRequest = new QueryRequest(params);
-    QueryResponse rsp = queryRequest.process(miniClusterState.client, COLLECTION);
+    QueryResponse rsp = queryRequest.process(solrBenchState.getClient());
     bh.consume(rsp);
   }
 
   @Benchmark
-  public void testLongQuery(
-      MiniClusterState.MiniClusterBenchState miniClusterState, Blackhole bh, BenchState state)
+  public void testLongQuery(SolrBenchState solrBenchState, Blackhole bh, BenchState state)
       throws Exception {
     SolrInputDocument queryDoc = state.queryFields.inputDocument();
     ModifiableSolrParams params = createInitialParams();
@@ -186,7 +184,7 @@ public class ExitableDirectoryReaderSearch {
     }
     params.set("q", query.toString());
     QueryRequest queryRequest = new QueryRequest(params);
-    QueryResponse rsp = queryRequest.process(miniClusterState.client, COLLECTION);
+    QueryResponse rsp = queryRequest.process(solrBenchState.getClient());
     bh.consume(rsp);
   }
 }

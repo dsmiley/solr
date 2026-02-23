@@ -23,9 +23,10 @@ import static org.apache.solr.bench.generators.SourceDSL.strings;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.apache.solr.bench.Docs;
-import org.apache.solr.bench.MiniClusterState;
-import org.apache.solr.bench.MiniClusterState.MiniClusterBenchState;
+import org.apache.solr.bench.MiniClusterBackend;
+import org.apache.solr.bench.SolrBenchState;
 import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.io.SolrClientCache;
 import org.apache.solr.client.solrj.io.Tuple;
@@ -56,8 +57,6 @@ import org.openjdk.jmh.annotations.Warmup;
 @Threads(value = 1)
 public class StreamingSearch {
 
-  private static final String collection = "benchStreamingSearch";
-
   @State(Scope.Benchmark)
   public static class BenchState {
 
@@ -68,23 +67,26 @@ public class StreamingSearch {
     private String zkHost;
     private ModifiableSolrParams params;
     private StreamContext streamContext;
-    private HttpJettySolrClient httpJettySolrClient;
 
     @Setup(Level.Trial)
-    public void setup(MiniClusterBenchState miniClusterState) throws Exception {
+    public void setup(SolrBenchState solrBenchState) throws Exception {
+      solrBenchState.start(3, 3, 1);
+      if (solrBenchState.createCollection("cloud-minimal", Map.of())) {
+        Docs docGen =
+            docs()
+                .field("id", integers().incrementing())
+                .field(
+                    "text2_ts", strings().basicLatinAlphabet().multi(312).ofLengthBetween(30, 64))
+                .field(
+                    "text3_ts", strings().basicLatinAlphabet().multi(312).ofLengthBetween(30, 64))
+                .field("int1_i_dv", integers().all());
+        solrBenchState.index(docGen, docs);
+        solrBenchState.waitForMerges();
+      }
 
-      miniClusterState.startMiniCluster(3);
-      miniClusterState.createCollection(collection, 3, 1);
-      Docs docGen =
-          docs()
-              .field("id", integers().incrementing())
-              .field("text2_ts", strings().basicLatinAlphabet().multi(312).ofLengthBetween(30, 64))
-              .field("text3_ts", strings().basicLatinAlphabet().multi(312).ofLengthBetween(30, 64))
-              .field("int1_i_dv", integers().all());
-      miniClusterState.index(collection, docGen, docs);
-      miniClusterState.waitForMerges(collection);
-
-      zkHost = miniClusterState.zkHost;
+      // StreamingSearch requires ZooKeeper access — cast to MiniClusterBackend to get the ZK host
+      MiniClusterBackend mcb = (MiniClusterBackend) solrBenchState.getBackend();
+      zkHost = mcb.getZkHost();
 
       params = new ModifiableSolrParams();
       params.set(CommonParams.Q, "*:*");
@@ -94,7 +96,7 @@ public class StreamingSearch {
     }
 
     @Setup(Level.Iteration)
-    public void setupIteration(MiniClusterState.MiniClusterBenchState miniClusterState)
+    public void setupIteration(SolrBenchState solrBenchState)
         throws SolrServerException, IOException {
       SolrClientCache solrClientCache;
       // TODO tune params?
@@ -108,17 +110,14 @@ public class StreamingSearch {
     @TearDown(Level.Iteration)
     public void teardownIt() {
       streamContext.getSolrClientCache().close();
-      if (httpJettySolrClient != null) {
-        httpJettySolrClient.close();
-      }
     }
   }
 
   @Benchmark
-  public Object stream(
-      BenchState benchState, MiniClusterState.MiniClusterBenchState miniClusterState)
+  public Object stream(BenchState benchState, SolrBenchState solrBenchState)
       throws SolrServerException, IOException {
-    CloudSolrStream stream = new CloudSolrStream(benchState.zkHost, collection, benchState.params);
+    CloudSolrStream stream =
+        new CloudSolrStream(benchState.zkHost, solrBenchState.getCollection(), benchState.params);
     stream.setStreamContext(benchState.streamContext);
     return getTuples(stream);
   }

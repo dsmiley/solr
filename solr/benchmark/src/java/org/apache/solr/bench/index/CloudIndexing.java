@@ -22,9 +22,10 @@ import static org.apache.solr.bench.generators.SourceDSL.longs;
 import static org.apache.solr.bench.generators.SourceDSL.strings;
 
 import java.util.Iterator;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import org.apache.solr.bench.Docs;
-import org.apache.solr.bench.MiniClusterState;
+import org.apache.solr.bench.SolrBenchState;
 import org.apache.solr.client.solrj.request.UpdateRequest;
 import org.apache.solr.common.SolrInputDocument;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -52,17 +53,6 @@ public class CloudIndexing {
 
   @State(Scope.Benchmark)
   public static class BenchState {
-
-    static final String COLLECTION = "testCollection";
-
-    @Param("4")
-    int nodeCount;
-
-    @Param("4")
-    int numShards;
-
-    @Param({"1", "3"})
-    int numReplicas;
 
     @Param({"true", "false"})
     boolean useSmallDocs;
@@ -114,22 +104,20 @@ public class CloudIndexing {
     }
 
     @Setup(Level.Trial)
-    public void doSetup(MiniClusterState.MiniClusterBenchState miniClusterState) throws Exception {
+    public void doSetup(SolrBenchState solrBenchState) throws Exception {
       preGenerate();
 
-      System.setProperty("mergePolicyFactory", "org.apache.solr.index.NoMergePolicyFactory");
-      miniClusterState.startMiniCluster(nodeCount);
-      miniClusterState.createCollection(COLLECTION, numShards, numReplicas);
+      solrBenchState.start(4, 4, 1);
+      solrBenchState.createCollection(
+          "cloud-minimal",
+          Map.of("mergePolicyFactory", "org.apache.solr.index.NoMergePolicyFactory"));
     }
   }
 
   @Benchmark
-  public Object indexDoc(MiniClusterState.MiniClusterBenchState miniClusterState, BenchState state)
-      throws Exception {
+  public Object indexDoc(SolrBenchState solrBenchState, BenchState state) throws Exception {
     UpdateRequest updateRequest = new UpdateRequest();
     updateRequest.add(state.getNextDoc());
-    final var url =
-        miniClusterState.nodes.get(miniClusterState.getRandom().nextInt(state.nodeCount));
-    return miniClusterState.client.requestWithBaseUrl(url, updateRequest, BenchState.COLLECTION);
+    return solrBenchState.getClient().request(updateRequest);
   }
 }

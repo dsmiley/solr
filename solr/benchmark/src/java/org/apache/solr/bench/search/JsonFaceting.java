@@ -20,11 +20,12 @@ import static org.apache.solr.bench.Docs.docs;
 import static org.apache.solr.bench.generators.SourceDSL.integers;
 import static org.apache.solr.bench.generators.SourceDSL.strings;
 
+import java.util.Map;
 import java.util.SplittableRandom;
 import java.util.concurrent.TimeUnit;
 import org.apache.solr.bench.BaseBenchState;
 import org.apache.solr.bench.Docs;
-import org.apache.solr.bench.MiniClusterState;
+import org.apache.solr.bench.SolrBenchState;
 import org.apache.solr.client.solrj.request.QueryRequest;
 import org.apache.solr.common.params.ModifiableSolrParams;
 import org.apache.solr.common.util.NamedList;
@@ -58,19 +59,8 @@ public class JsonFaceting {
   @State(Scope.Benchmark)
   public static class BenchState {
 
-    public static final String collection = "testCollection";
-
     @Param({"500000"})
     public int docCount;
-
-    @Param("2")
-    int nodeCount;
-
-    @Param("1")
-    int numReplicas;
-
-    @Param("4")
-    int numShards;
 
     @Param({"false", "true"})
     boolean useTimeLimit;
@@ -99,45 +89,39 @@ public class JsonFaceting {
     private ModifiableSolrParams params;
 
     @Setup(Level.Trial)
-    public void setup(
-        BenchmarkParams benchmarkParams, MiniClusterState.MiniClusterBenchState miniClusterState)
+    public void setup(BenchmarkParams benchmarkParams, SolrBenchState solrBenchState)
         throws Exception {
 
-      System.setProperty("maxMergeAtOnce", "50");
-      System.setProperty("segmentsPerTier", "50");
-
-      miniClusterState.startMiniCluster(nodeCount);
-
-      miniClusterState.createCollection(collection, numShards, numReplicas);
-
-      // Define random documents
-      Docs docs =
-          docs()
-              .field("id", integers().incrementing())
-              .field(
-                  "facet_s",
-                  strings().basicLatinAlphabet().maxCardinality(facetCard).ofLengthBetween(1, 64))
-              .field(
-                  "facet2_s",
-                  strings().basicLatinAlphabet().maxCardinality(facetCard).ofLengthBetween(1, 32))
-              .field(
-                  "facet3_s",
-                  strings()
-                      .basicMultilingualPlaneAlphabet()
-                      .maxCardinality(facetCard2)
-                      .ofLengthBetween(1, 128))
-              .field(strings().basicLatinAlphabet().multi(512).ofLengthBetween(4, 16))
-              .field(integers().all())
-              .field(integers().allWithMaxCardinality(facetCard2))
-              .field(integers().allWithMaxCardinality(facetCard2))
-              .field(integers().allWithMaxCardinality(facetCard2));
-
-      miniClusterState.index(collection, docs, docCount);
-      miniClusterState.forceMerge(collection, 25);
+      solrBenchState.start(2, 4, 1);
+      if (solrBenchState.createCollection(
+          "cloud-minimal", Map.of("maxMergeAtOnce", "50", "segmentsPerTier", "50"))) {
+        Docs docs =
+            docs()
+                .field("id", integers().incrementing())
+                .field(
+                    "facet_s",
+                    strings().basicLatinAlphabet().maxCardinality(facetCard).ofLengthBetween(1, 64))
+                .field(
+                    "facet2_s",
+                    strings().basicLatinAlphabet().maxCardinality(facetCard).ofLengthBetween(1, 32))
+                .field(
+                    "facet3_s",
+                    strings()
+                        .basicMultilingualPlaneAlphabet()
+                        .maxCardinality(facetCard2)
+                        .ofLengthBetween(1, 128))
+                .field(strings().basicLatinAlphabet().multi(512).ofLengthBetween(4, 16))
+                .field(integers().all())
+                .field(integers().allWithMaxCardinality(facetCard2))
+                .field(integers().allWithMaxCardinality(facetCard2))
+                .field(integers().allWithMaxCardinality(facetCard2));
+        solrBenchState.index(docs, docCount);
+        solrBenchState.forceMerge(25);
+      }
 
       params = new ModifiableSolrParams();
 
-      MiniClusterState.params(
+      SolrBenchState.params(
           params,
           "q",
           "*:*",
@@ -166,8 +150,6 @@ public class JsonFaceting {
         // high enough to return all results, but still affecting the performance
         params.set("timeAllowed", "5000");
       }
-
-      // MiniClusterState.log("params: " + params + "\n");
     }
 
     @State(Scope.Thread)
@@ -185,18 +167,13 @@ public class JsonFaceting {
   @Benchmark
   @Timeout(time = 500, timeUnit = TimeUnit.SECONDS)
   public void jsonFacet(
-      MiniClusterState.MiniClusterBenchState miniClusterState,
+      SolrBenchState solrBenchState,
       BenchState state,
       BenchState.ThreadState threadState,
       Blackhole bh)
       throws Exception {
-    final var url = miniClusterState.nodes.get(threadState.random.nextInt(state.nodeCount));
     QueryRequest queryRequest = new QueryRequest(state.params);
-    NamedList<Object> result =
-        miniClusterState.client.requestWithBaseUrl(url, queryRequest, state.collection);
-
-    // MiniClusterState.log("result: " + result);
-
+    NamedList<Object> result = solrBenchState.getClient().request(queryRequest);
     bh.consume(result);
   }
 }

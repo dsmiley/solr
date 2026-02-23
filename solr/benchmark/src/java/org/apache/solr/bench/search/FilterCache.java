@@ -19,18 +19,19 @@ package org.apache.solr.bench.search;
 import static org.apache.solr.bench.generators.SourceDSL.integers;
 
 import java.io.IOException;
-import java.net.HttpURLConnection;
-import java.net.URI;
-import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import org.apache.solr.bench.BaseBenchState;
 import org.apache.solr.bench.Docs;
-import org.apache.solr.bench.MiniClusterState;
+import org.apache.solr.bench.SolrBenchState;
 import org.apache.solr.bench.SolrRandomnessSource;
 import org.apache.solr.bench.generators.SolrGen;
 import org.apache.solr.client.solrj.SolrServerException;
-import org.apache.solr.client.solrj.request.CollectionAdminRequest;
+import org.apache.solr.client.solrj.request.MetricsRequest;
 import org.apache.solr.client.solrj.request.QueryRequest;
 import org.apache.solr.client.solrj.request.SolrQuery;
+import org.apache.solr.client.solrj.response.InputStreamResponseParser;
+import org.apache.solr.common.params.ModifiableSolrParams;
+import org.apache.solr.common.util.NamedList;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.Fork;
 import org.openjdk.jmh.annotations.Level;
@@ -49,8 +50,6 @@ import org.openjdk.jmh.annotations.Warmup;
 @Threads(value = 4)
 public class FilterCache {
 
-  static final String COLLECTION = "c1";
-
   @State(Scope.Benchmark)
   public static class BenchState {
     /**
@@ -68,86 +67,71 @@ public class FilterCache {
 
     QueryRequest q1 = new QueryRequest(new SolrQuery("q", "*:*", "fq", "Ea_b:true"));
     QueryRequest q2 = new QueryRequest(new SolrQuery("q", "*:*", "fq", "FB_b:true"));
-    String baseUrl;
 
     @Setup(Level.Trial)
-    public void setupTrial(MiniClusterState.MiniClusterBenchState miniClusterState)
-        throws Exception {
+    public void setupTrial(SolrBenchState solrBenchState) throws Exception {
       String cacheEnabled = cacheEnabledAsyncSize.split(":")[0];
       String asyncCache = cacheEnabledAsyncSize.split(":")[1];
       String cacheSize = cacheEnabledAsyncSize.split(":")[2];
-      System.setProperty("filterCache.enabled", cacheEnabled);
-      System.setProperty("filterCache.size", cacheSize);
-      System.setProperty("filterCache.initialSize", cacheSize);
-      System.setProperty("filterCache.async", asyncCache);
 
-      miniClusterState.startMiniCluster(1);
-      miniClusterState.createCollection(COLLECTION, 1, 1);
+      solrBenchState.start(1, 1, 1);
+      if (solrBenchState.createCollection(
+          "cloud-minimal",
+          Map.of(
+              "filterCache.enabled", cacheEnabled,
+              "filterCache.size", cacheSize,
+              "filterCache.initialSize", cacheSize,
+              "filterCache.async", asyncCache))) {
+        Docs docs = Docs.docs().field("id", integers().incrementing());
+        SolrGen<Boolean> booleans =
+            new SolrGen<>() {
+              int threshold = Integer.parseInt(frequency);
 
-      Docs docs = Docs.docs().field("id", integers().incrementing());
-
-      SolrGen<Boolean> booleans =
-          new SolrGen<>() {
-            int threshold = Integer.parseInt(frequency);
-
-            @Override
-            public Boolean generate(SolrRandomnessSource in) {
-              return in.next(0, 100) < threshold;
-            }
-          };
-      // Field names purposely chosen to create collision:
-      // "Ea_b".hashCode() == "FB_b".hashCode() == 2151839
-      docs.field("Ea_b", booleans);
-      docs.field("FB_b", booleans);
-
-      miniClusterState.index(COLLECTION, docs, 30 * 1000);
-      baseUrl = miniClusterState.nodes.get(0);
+              @Override
+              public Boolean generate(SolrRandomnessSource in) {
+                return in.next(0, 100) < threshold;
+              }
+            };
+        // Field names purposely chosen to create collision:
+        // "Ea_b".hashCode() == "FB_b".hashCode() == 2151839
+        docs.field("Ea_b", booleans);
+        docs.field("FB_b", booleans);
+        solrBenchState.index(docs, 30 * 1000);
+      }
     }
 
     @Setup(Level.Iteration)
-    public void setupIteration(MiniClusterState.MiniClusterBenchState miniClusterState)
-        throws SolrServerException, IOException {
+    public void setupIteration(SolrBenchState solrBenchState) throws Exception {
       // Reload the collection/core to drop existing caches
-      CollectionAdminRequest.Reload reload = CollectionAdminRequest.reloadCollection(COLLECTION);
-      miniClusterState.client.requestWithBaseUrl(miniClusterState.nodes.get(0), reload, null);
+      solrBenchState.reloadCollection();
     }
 
     @TearDown(Level.Iteration)
-    public void dumpMetrics(MiniClusterState.MiniClusterBenchState miniClusterState) {
+    public void dumpMetrics(SolrBenchState solrBenchState) {
       // TODO add a verbose flag
-
-      String url =
-          miniClusterState.nodes.get(0)
-              + "/admin/metrics?prefix=CACHE.searcher.filterCache&omitHeader=true";
-      HttpURLConnection conn = null;
+      ModifiableSolrParams params = new ModifiableSolrParams();
+      params.set("wt", "prometheus");
+      params.set("category", "CACHE");
       try {
-        conn = (HttpURLConnection) URI.create(url).toURL().openConnection();
-        conn.connect();
-        BaseBenchState.log(
-            new String(conn.getInputStream().readAllBytes(), StandardCharsets.UTF_8));
-      } catch (IOException e) {
+        NamedList<Object> res = solrBenchState.getClient().request(new MetricsRequest(params));
+        BaseBenchState.log(InputStreamResponseParser.consumeResponseToString(res));
+      } catch (Exception e) {
         // ignored
-      } finally {
-        if (conn != null) conn.disconnect();
       }
     }
   }
 
   @Benchmark
-  public Object filterCacheMultipleQueries(
-      BenchState benchState, MiniClusterState.MiniClusterBenchState miniClusterState)
+  public Object filterCacheMultipleQueries(BenchState benchState, SolrBenchState solrBenchState)
       throws SolrServerException, IOException {
-    return miniClusterState.client.requestWithBaseUrl(
-        benchState.baseUrl,
-        miniClusterState.getRandom().nextBoolean() ? benchState.q1 : benchState.q2,
-        COLLECTION);
+    return solrBenchState
+        .getClient()
+        .request(solrBenchState.getRandom().nextBoolean() ? benchState.q1 : benchState.q2);
   }
 
   @Benchmark
-  public Object filterCacheSingleQuery(
-      BenchState benchState, MiniClusterState.MiniClusterBenchState miniClusterState)
+  public Object filterCacheSingleQuery(BenchState benchState, SolrBenchState solrBenchState)
       throws SolrServerException, IOException {
-    return miniClusterState.client.requestWithBaseUrl(
-        benchState.baseUrl, benchState.q1, COLLECTION);
+    return solrBenchState.getClient().request(benchState.q1);
   }
 }
