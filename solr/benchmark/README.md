@@ -25,26 +25,6 @@
 
 ![](https://img.shields.io/badge/developer-tool-blue)
 
-## Table Of Content
-
-- [](#)
-  - [Table Of Content](#table-of-content)
-  - [Overview](#overview)
-  - [Getting Started](#getting-started)
-    - [Running `jmh.sh` with no Arguments](#running-jmhsh-with-no-arguments)
-    - [Pass a regex pattern or name after the command to select the benchmark(s) to run](#pass-a-regex-pattern-or-name-after-the-command-to-select-the-benchmarks-to-run)
-    - [The argument `-l` will list all the available benchmarks](#the-argument--l-will-list-all-the-available-benchmarks)
-    - [Check which benchmarks will run by entering a pattern after the -l argument](#check-which-benchmarks-will-run-by-entering-a-pattern-after-the--l-argument)
-    - [Further Pattern Examples](#further-pattern-examples)
-    - [`jmh.sh` accepts all the standard arguments that the standard JMH main-class handles](#jmhsh-accepts-all-the-standard-arguments-that-the-standard-jmh-main-class-handles)
-    - [Overriding Benchmark Parameters](#overriding-benchmark-parameters)
-    - [Format and Write Results to Files](#format-and-write-results-to-files)
-  - [JMH Command-Line Arguments](#jmh-command-line-arguments)
-    - [The JMH Command-Line Syntax](#the-jmh-command-line-syntax)
-    - [The Full List of JMH Arguments](#the-full-list-of-jmh-arguments)
-  - [Writing JMH benchmarks](#writing-jmh-benchmarks)
-  - [Continued Documentation](#continued-documentation)
-
 ---
 
 ## Overview
@@ -98,7 +78,7 @@ from the root benchmark module directory (i.e. `solr/benchmark`).
 
 >
 > ```zsh
-> ./jmh.sh BenchmarkClass 
+> ./jmh.sh BenchmarkClass
 > ```
 
 ### The argument `-l` will list all the available benchmarks
@@ -122,11 +102,12 @@ method name, or a substring.
 
 >
 > ```shell
->./jmh.sh -l org.apache.solr.benchmark.search.BenchmarkClass
->./jmh.sh -l BenchmarkClass
->./jmh.sh -l BenchmarkClass.benchmethod
->./jmh.sh -l Bench
->./jmh.sh -l benchme
+> ./jmh.sh -l org.apache.solr.benchmark.search.BenchmarkClass
+> ./jmh.sh -l BenchmarkClass
+> ./jmh.sh -l BenchmarkClass.benchmethod
+> ./jmh.sh -l Bench
+> ./jmh.sh -l benchme
+> ```
 
 ### The JMH Script Accepts _ALL_ of the Standard JMH Arguments
 
@@ -226,173 +207,171 @@ JSON. The `-rff` argument will dictate the filename and output location.
 
 Command-line options usually take precedence over annotations.
 
-  [arguments]                 Benchmarks to run (regexp+). (default: .*) 
+  [arguments]                 Benchmarks to run (regexp+). (default: .*)
 
-  -bm <mode>                  Benchmark mode. Available modes are: 
-                              [Throughput/thrpt,  AverageTime/avgt, 
-                              SampleTime/sample, SingleShotTime/ss, 
-                              All/all]. (default: Throughput) 
+  -bm <mode>                  Benchmark mode. Available modes are:
+                              [Throughput/thrpt,  AverageTime/avgt,
+                              SampleTime/sample, SingleShotTime/ss,
+                              All/all]. (default: Throughput)
 
-  -bs <int>                   Batch size: number of benchmark method calls per 
-                              operation. Some benchmark modes may ignore this 
-                              setting; please check this separately. 
-                              (default: 1) 
+  -bs <int>                   Batch size: number of benchmark method calls per
+                              operation. Some benchmark modes may ignore this
+                              setting; please check this separately.
+                              (default: 1)
 
-  -e <regexp+>                Benchmarks to exclude from the run. 
+  -e <regexp+>                Benchmarks to exclude from the run.
 
   -f <int>                    How many times to fork a single benchmark. Use 0
                               to  disable forking altogether. Warning:
                               disabling  forking may have a detrimental impact on
                               benchmark and infrastructure reliability. You might
-                              want to use a different warmup mode instead. (default: 1) 
+                              want to use a different warmup mode instead. (default: 1)
 
   -foe <bool>                 Should JMH fail immediately if any benchmark has
                               experienced an unrecoverable error? Failing fast
                               helps to make quick sanity tests for benchmark
                               suites and allows automated runs to do error
                               checking.
-                              codes. (default: false) 
+                              codes. (default: false)
 
-  -gc <bool>                  Should JMH force GC between iterations? Forcing 
+  -gc <bool>                  Should JMH force GC between iterations? Forcing
                               GC may help lower the noise in GC-heavy benchmarks
                               at the expense of jeopardizing GC ergonomics
-                              decisions. 
-                              Use with care. (default: false) 
+                              decisions.
+                              Use with care. (default: false)
 
-  -h                          Displays this help output and exits. 
+  -h                          Displays this help output and exits.
 
   -i <int>                    Number of measurement iterations to do.
-                              Measurement 
+                              Measurement
                               iterations are counted towards the benchmark
-                              score. 
+                              score.
                               (default: 1 for SingleShotTime, and 5 for all
-                              other modes) 
+                              other modes)
 
   -jvm <string>               Use given JVM for runs. This option only affects
-                              forked  runs. 
+                              forked  runs.
 
-  -jvmArgs <string>           Use given JVM arguments. Most options are 
+  -jvmArgs <string>           Use given JVM arguments. Most options are
                               inherited from the host VM options, but in some
                               cases, you want to pass the options only to a forked
-                              VM. Either single space-separated option line or 
+                              VM. Either single space-separated option line or
                               multiple options are accepted. This option only
-                              affects forked runs. 
+                              affects forked runs.
 
   -jvmArgsAppend <string>     Same as jvmArgs, but append these options after
-                              the  already given JVM args. 
+                              the  already given JVM args.
 
-  -jvmArgsPrepend <string>    Same as jvmArgs, but prepend these options before 
-                              the already given JVM arg. 
+  -jvmArgsPrepend <string>    Same as jvmArgs, but prepend these options before
+                              the already given JVM arg.
 
-  -l                          List the benchmarks that match a filter and exit. 
+  -l                          List the benchmarks that match a filter and exit.
 
   -lp                         List the benchmarks that match a filter, along
-  with 
-                              parameters, and exit. 
+  with
+                              parameters, and exit.
 
-  -lprof                      List profilers and exit. 
+  -lprof                      List profilers and exit.
 
-  -lrf                        List machine-readable result formats and exit. 
+  -lrf                        List machine-readable result formats and exit.
 
-  -o <filename>               Redirect human-readable output to a given file. 
+  -o <filename>               Redirect human-readable output to a given file.
 
-  -opi <int>                  Override operations per invocation, see 
+  -opi <int>                  Override operations per invocation, see
                               @OperationsPerInvocation  Javadoc for details.
-                              (default: 1) 
+                              (default: 1)
 
   -p <param={v,}*>            Benchmark parameters. This option is expected to
                               be used once per parameter. The parameter name and
                               parameter values should be separated with an
                               equal sign. Parameter values should be separated
-                              with commas. 
+                              with commas.
 
   -prof <profiler>            Use profilers to collect additional benchmark
-  data. 
+  data.
                               Some profilers are not available on all JVMs or
-                              all OSes.  '-lprof' will list the available 
+                              all OSes.  '-lprof' will list the available
                               profilers that are available and that can run
                               with the current OS configuration and installed dependencies.
 
   -r <time>                   Minimum time to spend at each measurement
                               iteration. Benchmarks may generally run longer
-                              than the iteration duration. (default: 10 s) 
+                              than the iteration duration. (default: 10 s)
 
-  -rf <type>                  Format type for machine-readable results. These 
+  -rf <type>                  Format type for machine-readable results. These
                               results are written to a separate file
                               (see -rff).  See the list of available result
-                              formats with -lrf. 
-                              (default: CSV) 
+                              formats with -lrf.
+                              (default: CSV)
 
-  -rff <filename>             Write machine-readable results to a given file. 
+  -rff <filename>             Write machine-readable results to a given file.
                               The -rf option controls the file format. Please
-                              see  the list of result formats available. 
-                              (default: jmh-result.<result-format>) 
+                              see  the list of result formats available.
+                              (default: jmh-result.<result-format>)
 
   -si <bool>                  Should JMH synchronize iterations? Doing so would
                               significantly lower the noise in multithreaded
                               tests by ensuring that the measured part happens
                               when all workers are running.
-                              (default: true) 
+                              (default: true)
 
   -t <int>                    Number of worker threads to run with. 'max' means
                               the maximum number of hardware threads available
-                              the machine, figured out by JMH itself. 
-                              (default:  1) 
+                              the machine, figured out by JMH itself.
+                              (default:  1)
 
-  -tg <int+>                  Override thread group distribution for asymmetric 
-                              benchmarks. This option expects a comma-separated 
-                              list of thread counts within the group. See 
-                              @Group/@GroupThreads 
-                              Javadoc for more information. 
+  -tg <int+>                  Override thread group distribution for asymmetric
+                              benchmarks. This option expects a comma-separated
+                              list of thread counts within the group. See
+                              @Group/@GroupThreads
+                              Javadoc for more information.
 
   -to <time>                  Timeout for benchmark iteration. After reaching
                               this timeout, JMH will try to interrupt the running
                               tasks. Non-cooperating benchmarks may ignore this =
-                              timeout. (default: 10 min) 
+                              timeout. (default: 10 min)
 
   -tu <TU>                    Override time unit in benchmark results. Available
                               time units are: [m, s, ms, us, ns].
-                              (default: SECONDS) 
+                              (default: SECONDS)
 
   -v <mode>                   Verbosity mode. Available modes are: [SILENT,
-                              NORMAL, EXTRA]. (default: NORMAL) 
+                              NORMAL, EXTRA]. (default: NORMAL)
 
   -w <time>                   Minimum time to spend at each warmup iteration.
-                              Benchmarks 
-                              may generally run longer than iteration duration. 
-                              (default: 10 s) 
+                              Benchmarks
+                              may generally run longer than iteration duration.
+                              (default: 10 s)
 
   -wbs <int>                  Warmup batch size: number of benchmark method
                               calls  per operation. Some benchmark modes may
-                              ignore this  setting. (default: 1) 
+                              ignore this  setting. (default: 1)
 
   -wf <int>                   How many warmup forks to make for a single
                               benchmark.   All benchmark iterations within the
                               warmup fork do not count towards the benchmark score.
-                              Use 0 to disable warmup forks. (default: 0) 
+                              Use 0 to disable warmup forks. (default: 0)
 
   -wi <int>                   Number of warmup iterations to do. Warmup
                               iterations do not count towards the benchmark
-                              score. 
+                              score.
                               (default:  0 for SingleShotTime, and 5 for all other
-                              modes) 
+                              modes)
 
-  -wm <mode>                  Warmup mode for warming up selected benchmarks. 
+  -wm <mode>                  Warmup mode for warming up selected benchmarks.
                               Warmup modes are INDI = Warmup each benchmark
-                              individually, 
+                              individually,
                               then measure it. BULK = Warm up all benchmarks
                               first, then do all the measurements. BULK_INDI =
                               warmup all benchmarks first, then re-warm up each
-                              benchmark individually, then measure it. 
-                              (default: INDI) 
+                              benchmark individually, then measure it.
+                              (default: INDI)
 
   -wmb <regexp+>              Warmup benchmarks to include in the run, in
                               addition to already selected by the primary filters.
                               The harness will not measure these benchmarks but only
-                              use them for the warmup. 
+                              use them for the warmup.
 ```
-
-</details>
 
 ---
 
