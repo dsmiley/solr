@@ -412,7 +412,7 @@ public class MiniSolrCloudCluster {
 
   private Path createInstancePath(String name) throws IOException {
     Path instancePath = baseDir.resolve(name);
-    Files.createDirectory(instancePath);
+    Files.createDirectories(instancePath); // allows existing, gracefully
     return instancePath;
   }
 
@@ -472,7 +472,7 @@ public class MiniSolrCloudCluster {
   }
 
   /**
-   * Start a new Solr instance on a particular servlet context
+   * Start a new Solr instance. It may re-use existing configuration and data on disk.
    *
    * @param name the instance name
    * @param config a JettyConfig for the instance's {@link org.apache.solr.embedded.JettySolrRunner}
@@ -486,10 +486,13 @@ public class MiniSolrCloudCluster {
     nodeProps.setProperty("zkHost", zkServer.getZkAddress());
 
     Path runnerPath = createInstancePath(name);
-    if (solrXml == null) {
-      solrXml = this.solrXml;
+    Path solrXmlPath = runnerPath.resolve("solr.xml");
+    if (!Files.exists(solrXmlPath)) {
+      if (solrXml == null) {
+        solrXml = this.solrXml;
+      }
+      Files.write(solrXmlPath, solrXml.getBytes(StandardCharsets.UTF_8));
     }
-    Files.write(runnerPath.resolve("solr.xml"), solrXml.getBytes(StandardCharsets.UTF_8));
     JettyConfig newConfig = JettyConfig.builder(config).build();
     JettySolrRunner jetty =
         !trackJettyMetrics
@@ -1115,7 +1118,8 @@ public class MiniSolrCloudCluster {
     }
 
     /**
-     * Configure and run the {@link MiniSolrCloudCluster}
+     * Configure and run the {@link MiniSolrCloudCluster} within the context of {@link
+     * SolrCloudTestCase}.
      *
      * @throws Exception if an error occurs on startup
      */
