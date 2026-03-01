@@ -138,17 +138,17 @@ public class SolrBenchState {
     String backendType = System.getProperty("solr.bench.backend", "minicluster");
 
     if ("minicluster".equals(backendType)) {
-      Path miniClusterBaseDir;
+      Path indexDir;
       boolean allowClusterReuse;
-      String baseDirSysProp = System.getProperty("miniClusterBaseDir");
-      if (baseDirSysProp != null) {
-        miniClusterBaseDir = Path.of(baseDirSysProp);
-        allowClusterReuse = Files.exists(miniClusterBaseDir);
+      String indexDirProp = System.getProperty("solr.bench.index.dir");
+      if (indexDirProp != null) {
+        indexDir = Path.of(indexDirProp);
+        allowClusterReuse = Files.exists(indexDir);
       } else {
-        miniClusterBaseDir = Path.of(workDir, "mini-cluster");
+        indexDir = Path.of(workDir, "mini-cluster");
         allowClusterReuse = false;
       }
-      backend = new MiniClusterBackend(miniClusterBaseDir, allowClusterReuse);
+      backend = new MiniClusterBackend(indexDir, allowClusterReuse);
     } else if ("remote".equals(backendType)) {
       backend = new RemoteSolrBackend();
     } else {
