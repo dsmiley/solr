@@ -65,7 +65,6 @@ public class MiniClusterBackend implements SolrBenchBackend {
 
     log("starting mini cluster at base directory: " + miniClusterBaseDir.toAbsolutePath());
 
-    boolean needsSetup = true;
     if (!allowClusterReuse && Files.exists(miniClusterBaseDir)) {
       log("mini cluster base directory exists, removing ...");
       try {
@@ -73,15 +72,13 @@ public class MiniClusterBackend implements SolrBenchBackend {
       } catch (IOException e) {
         throw new RuntimeException(e);
       }
-    } else if (allowClusterReuse && Files.exists(miniClusterBaseDir)) {
-      needsSetup = false;
     }
 
     try {
       cluster =
           new MiniSolrCloudCluster.Builder(nodeCount, miniClusterBaseDir)
               .formatZkServer(false)
-              .configure();
+              .build();
     } catch (Exception e) {
       if (Files.exists(miniClusterBaseDir)) {
         try {

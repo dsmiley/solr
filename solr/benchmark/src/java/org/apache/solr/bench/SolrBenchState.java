@@ -188,6 +188,9 @@ public class SolrBenchState {
     boolean created =
         backend.createCollection(collection, configName, numShards, numReplicas, properties);
     benchmarkClient = backend.getClient(collection);
+    if (created == false) {
+      log("Using EXISTING collection: " + configName);
+    }
     return created;
   }
 
