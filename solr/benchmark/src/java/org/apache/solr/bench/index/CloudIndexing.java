@@ -108,9 +108,18 @@ public class CloudIndexing {
       preGenerate();
 
       solrBenchState.start(4, 4, 1);
-      solrBenchState.createCollection(
-          "cloud-minimal",
-          Map.of("mergePolicyFactory", "org.apache.solr.index.NoMergePolicyFactory"));
+      boolean created =
+          solrBenchState.createCollection(
+              "cloud-minimal",
+              Map.of("mergePolicyFactory", "org.apache.solr.index.NoMergePolicyFactory"));
+      if (!created) {
+        // Collection was reused from a prior run; clear any previously indexed docs so
+        // throughput measurements start from a clean slate.
+        new UpdateRequest()
+            .deleteByQuery("*:*")
+            .setAction(UpdateRequest.ACTION.COMMIT, false, true)
+            .process(solrBenchState.getClient());
+      }
     }
   }
 
