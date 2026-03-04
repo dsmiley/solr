@@ -941,9 +941,9 @@ public class MiniSolrCloudCluster {
     }
   }
 
-  public void dumpMetrics(Path outputDirectory, String fileName) throws IOException {
+  public void dumpMetrics(PrintStream out) throws IOException {
     for (JettySolrRunner jetty : jettys) {
-      jetty.outputMetrics(outputDirectory, fileName);
+      jetty.outputMetrics(out);
     }
   }
 

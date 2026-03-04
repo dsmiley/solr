@@ -30,7 +30,6 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.io.PrintStream;
 import java.lang.invoke.MethodHandles;
 import java.net.BindException;
@@ -38,8 +37,6 @@ import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
@@ -722,29 +719,18 @@ public class JettySolrRunner {
     }
   }
 
-  public void outputMetrics(Path outputDirectory, String fileName) throws IOException {
+  public void outputMetrics(PrintStream out) throws IOException {
     if (getCoreContainer() != null) {
-
-      if (outputDirectory != null) {
-        Path outDir = outputDirectory;
-        Files.createDirectories(outDir);
-      }
-
       SolrMetricManager metricsManager = getCoreContainer().getMetricManager();
 
       Set<String> registryNames = metricsManager.registryNames();
       for (String registryName : registryNames) {
         var prometheusReader = metricsManager.getPrometheusMetricReader(registryName);
         if (prometheusReader != null) {
-          try (OutputStream os =
-              outputDirectory == null
-                  ? OutputStream.nullOutputStream()
-                  : Files.newOutputStream(outputDirectory.resolve(registryName + "_" + fileName))) {
-            new PrometheusTextFormatWriter(false).write(os, prometheusReader.collect());
-          }
+          out.println("Registry: " + registryName);
+          new PrometheusTextFormatWriter(false).write(out, prometheusReader.collect());
         }
       }
-
     } else {
       throw new IllegalStateException("No CoreContainer found");
     }
