@@ -33,7 +33,6 @@ import org.apache.solr.client.solrj.io.Tuple;
 import org.apache.solr.client.solrj.io.stream.CloudSolrStream;
 import org.apache.solr.client.solrj.io.stream.StreamContext;
 import org.apache.solr.client.solrj.io.stream.TupleStream;
-import org.apache.solr.client.solrj.jetty.HttpJettySolrClient;
 import org.apache.solr.common.params.CommonParams;
 import org.apache.solr.common.params.ModifiableSolrParams;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -98,17 +97,14 @@ public class StreamingSearch {
     @Setup(Level.Iteration)
     public void setupIteration(SolrBenchState solrBenchState)
         throws SolrServerException, IOException {
-      SolrClientCache solrClientCache;
-      // TODO tune params?
-      var client = new HttpJettySolrClient.Builder().useHttp1_1(useHttp1).build();
-      solrClientCache = new SolrClientCache(client);
-
+      System.setProperty("solr.http1", String.valueOf(useHttp1)); // used by our HTTP clients
+      SolrClientCache solrClientCache = new SolrClientCache();
       streamContext = new StreamContext();
       streamContext.setSolrClientCache(solrClientCache);
     }
 
     @TearDown(Level.Iteration)
-    public void teardownIt() {
+    public void teardownIt() throws IOException {
       streamContext.getSolrClientCache().close();
     }
   }
