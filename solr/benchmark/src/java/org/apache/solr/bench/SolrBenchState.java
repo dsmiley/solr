@@ -45,6 +45,7 @@ import org.apache.solr.client.solrj.request.UpdateRequest;
 import org.apache.solr.common.SolrInputDocument;
 import org.apache.solr.common.params.ModifiableSolrParams;
 import org.apache.solr.common.util.NamedList;
+import org.apache.solr.common.util.ObjectReleaseTracker;
 import org.apache.solr.common.util.SolrNamedThreadFactory;
 import org.apache.solr.common.util.SuppressForbidden;
 import org.apache.solr.util.SolrTestNonSecureRandomProvider;
@@ -388,6 +389,11 @@ public class SolrBenchState {
     }
 
     logIndexDirSize(indexDir, backend instanceof MiniClusterBackend);
+
+    String orr = ObjectReleaseTracker.clearObjectTrackerAndCheckEmpty();
+    if (orr != null) {
+      throw new AssertionError("ObjectReleaseTracker found unreleased objects:\n" + orr);
+    }
   }
 
   /**
