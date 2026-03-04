@@ -643,7 +643,7 @@ public class NodeConfig {
     public NodeConfigBuilder(String nodeName, Path solrHome) {
       this.nodeName = nodeName;
       this.solrHome = solrHome.toAbsolutePath();
-      this.coreRootDirectory = solrHome;
+      this.coreRootDirectory = this.solrHome;
       // always init from sysprop because <solrDataHome> config element may be missing
       setSolrDataHome(System.getProperty(SolrXmlConfig.SOLR_DATA_HOME));
       setConfigSetBaseDirectory("configsets");
