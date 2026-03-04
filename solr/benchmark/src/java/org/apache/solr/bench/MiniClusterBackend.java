@@ -16,12 +16,9 @@
  */
 package org.apache.solr.bench;
 
-import static org.apache.commons.io.file.PathUtils.deleteDirectory;
 import static org.apache.solr.bench.BaseBenchState.log;
 
-import java.io.IOException;
 import java.io.PrintStream;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -52,7 +49,6 @@ public class MiniClusterBackend implements SolrBenchBackend {
 
   @Override
   public void start(int nodeCount) throws Exception {
-    System.setProperty("doNotWaitForMergesOnIWClose", "true");
     System.setProperty("pkiHandlerPrivateKeyPath", "");
     System.setProperty("pkiHandlerPublicKeyPath", "");
     System.setProperty("solr.configset.default.confdir", "../server/solr/configsets/_default");
@@ -68,6 +64,12 @@ public class MiniClusterBackend implements SolrBenchBackend {
     List<JettySolrRunner> jetties = cluster.getJettySolrRunners();
     for (JettySolrRunner runner : jetties) {
       nodes.add(runner.getBaseUrl().toString());
+    }
+
+    // Wait for all collections to be fully active
+    var clusterState = cluster.getZkStateReader().getClusterState();
+    for (String collectionName : clusterState.getCollectionNames()) {
+      cluster.waitForActiveCollection(collectionName, 30, TimeUnit.SECONDS);
     }
 
     log("done starting mini cluster");
@@ -117,20 +119,15 @@ public class MiniClusterBackend implements SolrBenchBackend {
     if (existing != null && existing.contains(name)) {
       return false;
     }
-    try {
-      CollectionAdminRequest.Create create =
-          CollectionAdminRequest.createCollection(name, configName, shards, replicas);
-      if (!properties.isEmpty()) {
-        create.setProperties(properties);
-      }
-      client.request(create, null);
-      cluster.waitForActiveCollection(name, 15, TimeUnit.SECONDS, shards, shards * replicas);
-    } catch (Exception e) {
-      if (Files.exists(miniClusterBaseDir)) {
-        deleteDirectory(miniClusterBaseDir);
-      }
-      throw e;
+
+    CollectionAdminRequest.Create create =
+        CollectionAdminRequest.createCollection(name, configName, shards, replicas);
+    if (!properties.isEmpty()) {
+      create.setProperties(properties);
     }
+    client.request(create, null);
+    cluster.waitForActiveCollection(name, 15, TimeUnit.SECONDS, shards, shards * replicas);
+
     return true;
   }
 
@@ -160,39 +157,6 @@ public class MiniClusterBackend implements SolrBenchBackend {
     IOUtils.closeQuietly(client);
     if (cluster != null) {
       cluster.shutdown();
-    }
-    logClusterDirectorySize();
-  }
-
-  private void logClusterDirectorySize() {
-    log("");
-    if (!Files.exists(miniClusterBaseDir)) {
-      return;
-    }
-    try {
-      Files.list(miniClusterBaseDir.toAbsolutePath())
-          .forEach(
-              node -> {
-                try {
-                  long clusterSize =
-                      Files.walk(node)
-                          .filter(Files::isRegularFile)
-                          .mapToLong(
-                              file -> {
-                                try {
-                                  return Files.size(file);
-                                } catch (IOException e) {
-                                  throw new RuntimeException(e);
-                                }
-                              })
-                          .sum();
-                  log("mini cluster node size (bytes) " + node + " " + clusterSize);
-                } catch (IOException e) {
-                  throw new RuntimeException(e);
-                }
-              });
-    } catch (IOException e) {
-      log("unable to log cluster directory size: " + e.getMessage());
     }
   }
 }

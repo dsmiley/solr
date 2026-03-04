@@ -17,12 +17,14 @@
 package org.apache.solr.bench;
 
 import static org.apache.commons.io.file.PathUtils.deleteDirectory;
+import static org.apache.commons.io.file.PathUtils.sizeOfDirectory;
 import static org.apache.solr.bench.BaseBenchState.log;
 
 import com.codahale.metrics.Meter;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.net.URL;
+import java.nio.file.DirectoryStream;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -85,7 +87,8 @@ public class SolrBenchState {
   boolean isWarmup;
 
   private SplittableRandom random;
-  private String workDir; // nocommit should be Path
+  private Path workDir;
+  private Path indexDir;
 
   @Setup(Level.Trial)
   public void doSetup(BenchmarkParams benchmarkParams, BaseBenchState baseBenchState)
@@ -155,12 +158,16 @@ public class SolrBenchState {
 
     String indexDirProp = System.getProperty("solr.bench.index.dir");
     Path indexDir =
-        indexDirProp != null ? Path.of(indexDirProp) : Path.of(workDir, "backend", collection, backendType.name());
+        indexDirProp != null
+            ? Path.of(indexDirProp)
+            : workDir.resolve(backendType.name()).resolve(collection);
 
     boolean dirExisted = Files.exists(indexDir);
     if (dirExisted) {
       log("index dir exists, reusing: " + indexDir.toAbsolutePath());
     }
+
+    this.indexDir = indexDir;
 
     switch (backendType) {
       case MINICLUSTER -> backend = new MiniClusterBackend(indexDir);
@@ -180,6 +187,8 @@ public class SolrBenchState {
       }
       throw e;
     }
+    log("done starting " + backendType);
+    log("");
 
     registerConfigset(getFile("src/resources/configs/cloud-minimal"));
   }
@@ -352,12 +361,11 @@ public class SolrBenchState {
   public void tearDown(BenchmarkParams benchmarkParams) throws Exception {
     if (backend == null) return;
     Path metricsResults =
-        Path.of(
-            workDir,
-            "metrics-results",
-            benchmarkParams.id(),
-            String.valueOf(runCnt),
-            benchmarkParams.getBenchmark() + ".txt");
+        workDir
+            .resolve("metrics-results")
+            .resolve(benchmarkParams.id())
+            .resolve(String.valueOf(runCnt))
+            .resolve(benchmarkParams.getBenchmark() + ".txt");
     runCnt++;
     Files.createDirectories(metricsResults.getParent());
     try (var out = new PrintStream(Files.newOutputStream(metricsResults))) {
@@ -378,6 +386,8 @@ public class SolrBenchState {
         backend.close();
       }
     }
+
+    logIndexDirSize(indexDir, backend instanceof MiniClusterBackend);
   }
 
   /**
@@ -438,5 +448,35 @@ public class SolrBenchState {
             + name
             + " CWD="
             + Path.of("").toAbsolutePath());
+  }
+
+  /** Logs the total size and first-level child sizes of the index directory. */
+  private static void logIndexDirSize(Path indexDir, boolean logFirstLevel) {
+    if (indexDir == null || !Files.exists(indexDir)) {
+      return;
+    }
+
+    log("");
+    try {
+      long totalSize = sizeOfDirectory(indexDir);
+      log("index directory total size (bytes): " + totalSize);
+
+      if (!logFirstLevel) {
+        return;
+      }
+      // Log first-level child sizes
+      try (DirectoryStream<Path> stream = Files.newDirectoryStream(indexDir)) {
+        for (Path child : stream) {
+          try {
+            long childSize = Files.isDirectory(child) ? sizeOfDirectory(child) : Files.size(child);
+            log("index directory child size (bytes) " + child.getFileName() + ": " + childSize);
+          } catch (IOException e) {
+            log("unable to measure size of " + child.getFileName() + ": " + e.getMessage());
+          }
+        }
+      }
+    } catch (IOException e) {
+      log("unable to log index directory size: " + e.getMessage());
+    }
   }
 }

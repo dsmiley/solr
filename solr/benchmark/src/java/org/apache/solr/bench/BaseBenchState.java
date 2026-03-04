@@ -91,7 +91,7 @@ public class BaseBenchState {
   }
 
   /** The Work dir. */
-  public String workDir;
+  public Path workDir;
 
   /**
    * Do setup.
@@ -101,9 +101,9 @@ public class BaseBenchState {
   @Setup(Level.Trial)
   public void doSetup(BenchmarkParams benchmarkParams) {
 
-    workDir = System.getProperty("workBaseDir", "build/work");
+    workDir = Path.of(System.getProperty("workBaseDir", "build/work"));
 
-    System.setProperty("solr.logs.dir", workDir + "/logs");
+    System.setProperty("solr.logs.dir", workDir.resolve("logs").toString());
     System.setProperty("solr.log.name", benchmarkParams.id());
   }
 
