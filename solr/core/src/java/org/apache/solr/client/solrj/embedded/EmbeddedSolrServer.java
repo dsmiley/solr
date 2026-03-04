@@ -157,6 +157,10 @@ public class EmbeddedSolrServer extends SolrClient {
   public NamedList<Object> request(SolrRequest<?> request, String coreName)
       throws SolrServerException, IOException {
 
+    if (request.getApiVersion() == SolrRequest.ApiVersion.V2) {
+      throw new IllegalArgumentException("V2 isn't supported");
+    }
+
     String path = request.getPath();
     if (path == null || !path.startsWith("/")) {
       path = "/select";
