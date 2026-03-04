@@ -27,7 +27,6 @@ import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.jetty.HttpJettySolrClient;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest;
 import org.apache.solr.client.solrj.request.ConfigSetAdminRequest;
-import org.apache.solr.client.solrj.request.UpdateRequest;
 import org.apache.solr.client.solrj.response.CollectionAdminResponse;
 import org.apache.solr.common.util.IOUtils;
 
@@ -52,10 +51,18 @@ public class RemoteSolrBackend implements SolrBenchBackend {
 
   @Override
   public SolrClient getClient(String collection) {
+    // never cache null (admin request)
+    if (collection == null) {
+      return createClient(null);
+    }
     if (client == null) {
       client = createClient(collection);
     }
     return client;
+  }
+
+  protected HttpJettySolrClient createClient(String collection) {
+    return new HttpJettySolrClient.Builder(baseUrl).withDefaultCollection(collection).build();
   }
 
   @Override
@@ -113,37 +120,6 @@ public class RemoteSolrBackend implements SolrBenchBackend {
                 }
               });
     }
-  }
-
-  protected HttpJettySolrClient createClient(String collection) {
-    return new HttpJettySolrClient.Builder(baseUrl).withDefaultCollection(collection).build();
-  }
-
-  @Override
-  public void reloadCollection(String name) throws Exception {
-    client.request(CollectionAdminRequest.reloadCollection(name), null);
-  }
-
-  @Override
-  public void forceMerge(String name, int maxSegments) throws Exception {
-    UpdateRequest optimizeRequest = new UpdateRequest();
-    optimizeRequest.setAction(UpdateRequest.ACTION.OPTIMIZE, false, true, maxSegments);
-    client.request(optimizeRequest, name);
-  }
-
-  @Override
-  public void waitForMerges(String name) throws Exception {
-    forceMerge(name, Integer.MAX_VALUE);
-  }
-
-  @Override
-  public void dumpMetrics(Path file) throws Exception {
-    // TODO: fetch from /admin/metrics API
-  }
-
-  @Override
-  public void dumpCoreInfo() throws Exception {
-    // no-op for remote backend
   }
 
   @Override

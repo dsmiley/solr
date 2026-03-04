@@ -16,18 +16,27 @@
  */
 package org.apache.solr.bench;
 
+import java.io.PrintStream;
 import java.nio.file.Path;
 import java.util.Map;
 import org.apache.solr.client.solrj.SolrClient;
+import org.apache.solr.client.solrj.SolrRequest;
+import org.apache.solr.client.solrj.request.CollectionAdminRequest;
+import org.apache.solr.client.solrj.request.GenericSolrRequest;
+import org.apache.solr.client.solrj.request.MetricsRequest;
+import org.apache.solr.client.solrj.request.UpdateRequest;
+import org.apache.solr.client.solrj.response.InputStreamResponseParser;
+import org.apache.solr.common.params.SolrParams;
 
 /** Strategy interface for Solr benchmark infrastructure backends. */
 public interface SolrBenchBackend extends AutoCloseable {
+  // TODO should be replaced by SolrClientTestRule
 
   /** Start infrastructure. nodeCount is a hint; remote backends may ignore it. */
   void start(int nodeCount) throws Exception;
 
   /**
-   * Returns a {@link SolrClient} defaulted to the given collection. Implementations may create and
+   * Returns a {@link SolrClient} defaulted to the given collection. Implementations will create and
    * cache the client lazily on first call.
    */
   SolrClient getClient(String collection) throws Exception;
@@ -52,17 +61,44 @@ public interface SolrBenchBackend extends AutoCloseable {
       throws Exception;
 
   /** Reload a collection (typically to clear caches). */
-  void reloadCollection(String name) throws Exception;
+  default void reloadCollection(String name) throws Exception {
+    try (var client = getClient(null)) {
+      client.request(CollectionAdminRequest.reloadCollection(name));
+    }
+  }
 
-  /** Force merge to target segment count. */
-  void forceMerge(String name, int maxSegments) throws Exception;
+  /** Force merge (AKA Solr "optimize") to target segment count. */
+  default void forceMerge(String name, int maxSegments) throws Exception {
+    new UpdateRequest()
+        .setAction(UpdateRequest.ACTION.OPTIMIZE, false, true, maxSegments)
+        .process(getClient(name));
+  }
 
   /** Wait for background merges. */
-  void waitForMerges(String name) throws Exception;
+  default void waitForMerges(String name) throws Exception {
+    forceMerge(name, Integer.MAX_VALUE);
+  }
 
   /** Optional diagnostics; no-op is acceptable. */
-  void dumpMetrics(Path file) throws Exception;
+  default void dumpMetrics(PrintStream out) throws Exception {
+    var request = new MetricsRequest();
+    request.setResponseParser(new InputStreamResponseParser("prometheus"));
+    try (var client = getClient(null)) {
+      var response = request.process(client);
+      out.println(InputStreamResponseParser.consumeResponseToString(response.getResponse()));
+    }
+  }
 
   /** Optional diagnostics; no-op is acceptable. */
-  void dumpCoreInfo() throws Exception;
+  default void dumpCoreInfo(PrintStream out) throws Exception {
+    // note using v1 as v2 is experimental and also not supported by EmbeddedSolrServer
+    var request =
+        new GenericSolrRequest(
+            SolrRequest.METHOD.GET, "/admin/cores", SolrParams.of("indexInfo", "true"));
+    request.setResponseParser(new InputStreamResponseParser("json"));
+    try (var client = getClient(null)) {
+      var response = request.process(client);
+      out.println(InputStreamResponseParser.consumeResponseToString(response.getResponse()));
+    }
+  }
 }

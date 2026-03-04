@@ -327,6 +327,7 @@ public class StringsDSL {
      * @return the string generator builder
      */
     public StringGeneratorBuilder maxCardinality(int max) {
+      checkArguments(max > 0, "cardinality must be positive");
       maxCardinality = SolrGenerate.constant(max);
       return this;
     }

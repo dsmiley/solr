@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.util.Map;
 import org.apache.solr.bench.BaseBenchState;
 import org.apache.solr.bench.Docs;
+import org.apache.solr.bench.SolrBenchBackendType;
 import org.apache.solr.bench.SolrBenchState;
 import org.apache.solr.bench.SolrRandomnessSource;
 import org.apache.solr.bench.generators.SolrGen;
@@ -61,7 +62,7 @@ public class FilterCache {
     @Param({"2", "98"})
     String frequency;
 
-    // We don't need to test the full cross-product of these paramaters, so pick the relevant ones
+    // We don't need to test the full cross-product of these parameters, so pick the relevant ones
     @Param({"true:true:1", "true:false:1", "true:true:0", "true:false:0", "false:false:0"})
     String cacheEnabledAsyncSize;
 
@@ -74,7 +75,7 @@ public class FilterCache {
       String asyncCache = cacheEnabledAsyncSize.split(":")[1];
       String cacheSize = cacheEnabledAsyncSize.split(":")[2];
 
-      solrBenchState.start(1, 1, 1);
+      solrBenchState.start(1, 1, 1, SolrBenchBackendType.EMBEDDED);
       if (solrBenchState.createCollection(
           "cloud-minimal",
           Map.of(

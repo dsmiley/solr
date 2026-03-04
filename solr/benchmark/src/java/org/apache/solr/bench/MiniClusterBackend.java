@@ -20,9 +20,7 @@ import static org.apache.commons.io.file.PathUtils.deleteDirectory;
 import static org.apache.solr.bench.BaseBenchState.log;
 
 import java.io.IOException;
-import java.io.OutputStream;
 import java.io.PrintStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -34,26 +32,22 @@ import org.apache.solr.client.solrj.impl.CloudSolrClient;
 import org.apache.solr.client.solrj.jetty.HttpJettySolrClient;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest;
 import org.apache.solr.client.solrj.request.ConfigSetAdminRequest;
-import org.apache.solr.client.solrj.request.UpdateRequest;
 import org.apache.solr.client.solrj.response.CollectionAdminResponse;
 import org.apache.solr.cloud.MiniSolrCloudCluster;
 import org.apache.solr.common.util.IOUtils;
-import org.apache.solr.common.util.SuppressForbidden;
 import org.apache.solr.embedded.JettySolrRunner;
 
 /** {@link SolrBenchBackend} implementation backed by an embedded {@link MiniSolrCloudCluster}. */
 public class MiniClusterBackend implements SolrBenchBackend {
 
   private final Path miniClusterBaseDir;
-  private final boolean allowClusterReuse;
 
   protected MiniSolrCloudCluster cluster;
   private SolrClient client;
   private List<String> nodes;
 
-  public MiniClusterBackend(Path miniClusterBaseDir, boolean allowClusterReuse) {
+  public MiniClusterBackend(Path miniClusterBaseDir) {
     this.miniClusterBaseDir = miniClusterBaseDir;
-    this.allowClusterReuse = allowClusterReuse;
   }
 
   @Override
@@ -65,30 +59,10 @@ public class MiniClusterBackend implements SolrBenchBackend {
 
     log("starting mini cluster at base directory: " + miniClusterBaseDir.toAbsolutePath());
 
-    if (!allowClusterReuse && Files.exists(miniClusterBaseDir)) {
-      log("mini cluster base directory exists, removing ...");
-      try {
-        deleteDirectory(miniClusterBaseDir);
-      } catch (IOException e) {
-        throw new RuntimeException(e);
-      }
-    }
-
-    try {
-      cluster =
-          new MiniSolrCloudCluster.Builder(nodeCount, miniClusterBaseDir)
-              .formatZkServer(false)
-              .build();
-    } catch (Exception e) {
-      if (Files.exists(miniClusterBaseDir)) {
-        try {
-          deleteDirectory(miniClusterBaseDir);
-        } catch (IOException ex) {
-          e.addSuppressed(ex);
-        }
-      }
-      throw e;
-    }
+    cluster =
+        new MiniSolrCloudCluster.Builder(nodeCount, miniClusterBaseDir)
+            .formatZkServer(false)
+            .build();
 
     nodes = new ArrayList<>(nodeCount);
     List<JettySolrRunner> jetties = cluster.getJettySolrRunners();
@@ -102,13 +76,17 @@ public class MiniClusterBackend implements SolrBenchBackend {
 
   @Override
   public SolrClient getClient(String collection) {
+    // never cache null (admin request)
+    if (collection == null) {
+      return createClient(null);
+    }
     if (client == null) {
       client = createClient(collection);
     }
     return client;
   }
 
-  /** Returns the ZooKeeper address; needed by streaming benchmarks that use CloudSolrStream. */
+  /** Returns the ZooKeeper address */
   public String getZkHost() {
     return cluster.getZkServer().getZkAddress();
   }
@@ -168,39 +146,13 @@ public class MiniClusterBackend implements SolrBenchBackend {
   }
 
   @Override
-  public void reloadCollection(String name) throws Exception {
-    client.request(CollectionAdminRequest.reloadCollection(name), null);
+  public void dumpMetrics(PrintStream out) throws Exception {
+    cluster.dumpMetrics(out);
   }
 
   @Override
-  public void forceMerge(String name, int maxSegments) throws Exception {
-    if (maxSegments == Integer.MAX_VALUE) {
-      log("waiting for merges to finish...\n");
-    } else {
-      log("merging segments to " + maxSegments + " segments ...\n");
-    }
-    UpdateRequest optimizeRequest = new UpdateRequest();
-    optimizeRequest.setAction(UpdateRequest.ACTION.OPTIMIZE, false, true, maxSegments);
-    client.request(optimizeRequest, name);
-  }
-
-  @Override
-  public void waitForMerges(String name) throws Exception {
-    forceMerge(name, Integer.MAX_VALUE);
-  }
-
-  @Override
-  public void dumpMetrics(Path file) throws Exception {
-    cluster.dumpMetrics(file.getParent(), file.getFileName().toString());
-  }
-
-  @Override
-  @SuppressForbidden(reason = "JMH uses std out for user output")
-  public void dumpCoreInfo() throws Exception {
-    cluster.dumpCoreInfo(
-        !BaseBenchState.QUIET_LOG
-            ? System.out
-            : new PrintStream(OutputStream.nullOutputStream(), false, StandardCharsets.UTF_8));
+  public void dumpCoreInfo(PrintStream out) throws Exception {
+    cluster.dumpCoreInfo(out);
   }
 
   @Override

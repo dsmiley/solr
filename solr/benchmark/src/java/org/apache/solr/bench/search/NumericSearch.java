@@ -28,6 +28,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import org.apache.solr.bench.CircularIterator;
 import org.apache.solr.bench.Docs;
+import org.apache.solr.bench.SolrBenchBackendType;
 import org.apache.solr.bench.SolrBenchState;
 import org.apache.solr.bench.generators.SolrGen;
 import org.apache.solr.client.solrj.SolrServerException;
@@ -66,7 +67,7 @@ public class NumericSearch {
 
     @Setup(Level.Trial)
     public void setupTrial(SolrBenchState solrBenchState) throws Exception {
-      solrBenchState.start(1, 1, 1);
+      solrBenchState.start(1, 1, 1, SolrBenchBackendType.EMBEDDED);
       int maxCardinality = 10000;
       int numDocs = 2000000;
       setValues = integers().allWithMaxCardinality(maxCardinality);

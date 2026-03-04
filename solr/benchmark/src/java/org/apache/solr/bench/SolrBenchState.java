@@ -16,16 +16,19 @@
  */
 package org.apache.solr.bench;
 
+import static org.apache.commons.io.file.PathUtils.deleteDirectory;
 import static org.apache.solr.bench.BaseBenchState.log;
 
 import com.codahale.metrics.Meter;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.net.URL;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.SplittableRandom;
 import java.util.concurrent.ExecutorService;
@@ -82,7 +85,7 @@ public class SolrBenchState {
   boolean isWarmup;
 
   private SplittableRandom random;
-  private String workDir;
+  private String workDir; // nocommit should be Path
 
   @Setup(Level.Trial)
   public void doSetup(BenchmarkParams benchmarkParams, BaseBenchState baseBenchState)
@@ -130,32 +133,53 @@ public class SolrBenchState {
    */
   public void start(int defaultNodeCount, int defaultNumShards, int defaultNumReplicas)
       throws Exception {
+    start(defaultNodeCount, defaultNumShards, defaultNumReplicas, SolrBenchBackendType.MINICLUSTER);
+  }
+
+  public void start(
+      int defaultNodeCount,
+      int defaultNumShards,
+      int defaultNumReplicas,
+      SolrBenchBackendType defaultBackend)
+      throws Exception {
 
     int nodeCount = Integer.getInteger("solr.bench.nodeCount", defaultNodeCount);
     numShards = Integer.getInteger("solr.bench.numShards", defaultNumShards);
-    numReplicas = Integer.getInteger("solr.bench.numReplicas", defaultNumReplicas);
+    numReplicas = Integer.getInteger("solr.bench.numReplicas", defaultNumReplicas); // nocommit
 
-    String backendType = System.getProperty("solr.bench.backend", "minicluster");
+    String backendProp = System.getProperty("solr.bench.backend");
+    SolrBenchBackendType backendType =
+        backendProp != null
+            ? SolrBenchBackendType.valueOf(backendProp.toUpperCase(Locale.ROOT))
+            : defaultBackend;
 
-    if ("minicluster".equals(backendType)) {
-      Path indexDir;
-      boolean allowClusterReuse;
-      String indexDirProp = System.getProperty("solr.bench.index.dir");
-      if (indexDirProp != null) {
-        indexDir = Path.of(indexDirProp);
-        allowClusterReuse = Files.exists(indexDir);
-      } else {
-        indexDir = Path.of(workDir, "mini-cluster");
-        allowClusterReuse = false;
-      }
-      backend = new MiniClusterBackend(indexDir, allowClusterReuse);
-    } else if ("remote".equals(backendType)) {
-      backend = new RemoteSolrBackend();
-    } else {
-      throw new IllegalArgumentException("Unknown solr.bench.backend: " + backendType);
+    String indexDirProp = System.getProperty("solr.bench.index.dir");
+    Path indexDir =
+        indexDirProp != null ? Path.of(indexDirProp) : Path.of(workDir, "backend", collection, backendType.name());
+
+    boolean dirExisted = Files.exists(indexDir);
+    if (dirExisted) {
+      log("index dir exists, reusing: " + indexDir.toAbsolutePath());
     }
 
-    backend.start(nodeCount);
+    switch (backendType) {
+      case MINICLUSTER -> backend = new MiniClusterBackend(indexDir);
+      case EMBEDDED -> backend = new EmbeddedSolrBackend(indexDir);
+      case REMOTE -> backend = new RemoteSolrBackend();
+    }
+
+    try {
+      backend.start(nodeCount);
+    } catch (Exception e) {
+      if (!dirExisted && Files.exists(indexDir)) {
+        try {
+          deleteDirectory(indexDir);
+        } catch (IOException ex) {
+          e.addSuppressed(ex);
+        }
+      }
+      throw e;
+    }
 
     registerConfigset(getFile("src/resources/configs/cloud-minimal"));
   }
@@ -189,7 +213,7 @@ public class SolrBenchState {
         backend.createCollection(collection, configName, numShards, numReplicas, properties);
     benchmarkClient = backend.getClient(collection);
     if (created == false) {
-      log("Using EXISTING collection: " + configName);
+      log("Using EXISTING collection: " + collection);
     }
     return created;
   }
@@ -199,10 +223,12 @@ public class SolrBenchState {
   }
 
   public void forceMerge(int maxSegments) throws Exception {
+    log("merging segments to " + maxSegments + " segments ...\n");
     backend.forceMerge(collection, maxSegments);
   }
 
   public void waitForMerges() throws Exception {
+    log("waiting for merges to finish...\n");
     backend.waitForMerges(collection);
   }
 
@@ -210,28 +236,22 @@ public class SolrBenchState {
     return random;
   }
 
-  @SuppressForbidden(reason = "This module does not need to deal with logging context")
   public void index(Docs docs, int docCount) throws Exception {
     index(docs, docCount, true);
   }
 
-  @SuppressForbidden(reason = "This module does not need to deal with logging context")
   public void index(Docs docs, int docCount, boolean parallel) throws Exception {
-    if (!Boolean.getBoolean("solr.bench.skipIndexing")) {
-      log("indexing data for benchmark...");
-      if (parallel) {
-        indexParallel(docs, docCount);
-      } else {
-        indexBatch(docs, docCount, 10000);
-      }
-      log("done indexing data for benchmark");
-
-      log("committing data ...");
-      UpdateRequest commitRequest = new UpdateRequest();
-      commitRequest.setAction(UpdateRequest.ACTION.COMMIT, false, true);
-      benchmarkClient.request(commitRequest, collection);
-      log("done committing data");
+    log("indexing data for benchmark...");
+    if (parallel) {
+      indexParallel(docs, docCount);
+    } else {
+      indexBatch(docs, docCount, 10_000);
     }
+    log("done indexing data for benchmark");
+
+    log("committing data ...");
+    benchmarkClient.commit(collection);
+    log("done committing data");
 
     QueryRequest queryRequest = new QueryRequest(new SolrQuery("q", "*:*", "rows", "1"));
     NamedList<Object> result = benchmarkClient.request(queryRequest, collection);
@@ -317,7 +337,10 @@ public class SolrBenchState {
   }
 
   public void dumpCoreInfo() throws Exception {
-    backend.dumpCoreInfo();
+    if (BaseBenchState.QUIET_LOG) {
+      return;
+    }
+    backend.dumpCoreInfo(System.out);
   }
 
   @Setup(Level.Iteration)
@@ -337,7 +360,9 @@ public class SolrBenchState {
             benchmarkParams.getBenchmark() + ".txt");
     runCnt++;
     Files.createDirectories(metricsResults.getParent());
-    backend.dumpMetrics(metricsResults);
+    try (var out = new PrintStream(Files.newOutputStream(metricsResults))) {
+      backend.dumpMetrics(out);
+    }
   }
 
   @TearDown(Level.Trial)

@@ -24,6 +24,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import org.apache.solr.bench.Docs;
+import org.apache.solr.bench.SolrBenchBackendType;
 import org.apache.solr.bench.SolrBenchState;
 import org.apache.solr.client.solrj.request.QueryRequest;
 import org.apache.solr.client.solrj.response.QueryResponse;
@@ -66,7 +67,7 @@ public class ExitableDirectoryReaderSearch {
     @Setup(Level.Trial)
     public void setupTrial(SolrBenchState solrBenchState) throws Exception {
 
-      solrBenchState.start(1, 1, 1);
+      solrBenchState.start(1, 1, 1, SolrBenchBackendType.EMBEDDED);
       if (solrBenchState.createCollection(
           "cloud-minimal",
           Map.of(

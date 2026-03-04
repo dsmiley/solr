@@ -385,6 +385,49 @@ JMH is highly configurable, and users are encouraged to look through the samples
 for exposure around what options are available. A good tutorial for learning JMH basics is
 found [here](http://tutorials.jenkov.com/java-performance/jmh.html#return-value-from-benchmark-method)
 
+## Separating Indexing from Benchmarking
+
+By default, `@Setup(Level.Trial)` — including data indexing — runs in the same forked JVM as
+warmup and measurement. This means indexing code paths can influence JIT compilation before
+the benchmark even starts.
+
+To avoid this, run the benchmark **twice**: once to build the index, then again to measure.
+On the second run, `createCollection` finds the collection already exists and skips indexing
+entirely.
+
+### Using a persistent directory
+
+```zsh
+# Run 1: build the index, then exit
+./jmh.sh SimpleSearch \
+  -jvmArgs -Dsolr.bench.index.dir=/tmp/bench-cluster \
+  -bm ss
+
+# Run 2: benchmark against the already-indexed cluster (indexing is skipped)
+./jmh.sh SimpleSearch \
+  -jvmArgs -Dsolr.bench.index.dir=/tmp/bench-cluster
+```
+
+`-bm ss` (SingleShotTime) runs the benchmark method exactly once with no warmup, which is
+exactly what is needed here: trigger `@Setup` and exit as quickly as possible.
+
+If the benchmark has multiple `@Param` values, Run 1 will fork once per combination. Only the
+first fork creates and indexes the collection; subsequent forks find it already present and
+skip indexing immediately. This is harmless — the index is built by the time Run 1 finishes.
+
+> **Limitation:** index reuse only works correctly when collection and index creation are
+> independent of `@Param` values. If a parameter affects what gets indexed (document count,
+> field cardinality, collection properties, etc.), each parameter combination requires its own
+> distinct index and cannot safely share one. Benchmarks that measure indexing itself are
+> similarly not candidates for this pattern.
+
+On Run 2, because `solr.bench.index.dir` already exists on disk, the cluster is reused and
+`createCollection` returns `false` (collection already present), so no indexing occurs.
+
+> **Tip:** the same two-run approach works with the remote backend
+> (`-Dsolr.bench.backend=remote`). Because the remote Solr process persists between runs,
+> the collection survives from Run 1 to Run 2 with no extra configuration needed.
+
 ## Additional Documentation
 
 ### 📚 Profilers
