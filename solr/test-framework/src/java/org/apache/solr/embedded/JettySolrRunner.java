@@ -37,6 +37,7 @@ import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
@@ -48,11 +49,15 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import org.apache.solr.client.api.model.CreateCollectionRequestBody;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.apache.HttpSolrClient;
 import org.apache.solr.client.solrj.jetty.SSLConfig;
+import org.apache.solr.client.solrj.request.CoreAdminRequest;
 import org.apache.solr.client.solrj.request.CoresApi;
+import org.apache.solr.common.SolrException;
+import org.apache.solr.common.util.IOUtils;
 import org.apache.solr.common.util.TimeSource;
 import org.apache.solr.common.util.Utils;
 import org.apache.solr.core.CoreContainer;
@@ -64,6 +69,7 @@ import org.apache.solr.servlet.RequiredSolrRequestFilter;
 import org.apache.solr.servlet.SolrDispatchFilter;
 import org.apache.solr.servlet.TracingFilter;
 import org.apache.solr.util.SocketProxy;
+import org.apache.solr.util.SolrBackend;
 import org.apache.solr.util.TimeOut;
 import org.apache.solr.util.configuration.SSLConfigurationsFactory;
 import org.eclipse.jetty.alpn.server.ALPNServerConnectionFactory;
@@ -100,7 +106,7 @@ import org.slf4j.MDC;
  *
  * @since solr 1.3
  */
-public class JettySolrRunner {
+public class JettySolrRunner implements SolrBackend {
 
   private static final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
@@ -139,6 +145,8 @@ public class JettySolrRunner {
   private String protocol;
 
   private String host;
+
+  private volatile HttpSolrClient backendAdminClient;
 
   private volatile boolean started = false;
 
@@ -582,6 +590,9 @@ public class JettySolrRunner {
 
       setProtocolAndHost();
 
+      IOUtils.closeQuietly(backendAdminClient);
+      backendAdminClient = new HttpSolrClient.Builder(getBaseUrl().toString()).build();
+
       if (enableProxy) {
         if (started) {
           proxy.reopen();
@@ -710,6 +721,9 @@ public class JettySolrRunner {
       if (enableProxy) {
         proxy.close();
       }
+
+      IOUtils.closeQuietly(backendAdminClient);
+      backendAdminClient = null;
 
       if (prevContext != null) {
         MDC.setContextMap(prevContext);
@@ -902,5 +916,67 @@ public class JettySolrRunner {
 
   public SocketProxy getProxy() {
     return proxy;
+  }
+
+  // ---- SolrBackend implementation ----
+
+  @Override
+  public SolrClient newClient(String collection) {
+    return new HttpSolrClient.Builder(getBaseUrl().toString())
+        .withDefaultCollection(collection)
+        .build();
+  }
+
+  @Override
+  public SolrClient getAdminClient() {
+    return backendAdminClient;
+  }
+
+  @Override
+  public void registerConfigset(Path configDir, String name)
+      throws SolrException, SolrBackend.AlreadyExistsException {
+    try {
+      var ccs = getCoreContainer().getConfigSetService();
+      if (ccs.checkConfigExists(name)) {
+        throw new SolrBackend.AlreadyExistsException(name);
+      }
+      ccs.uploadConfig(name, configDir.resolve("conf"));
+    } catch (SolrBackend.AlreadyExistsException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);
+    }
+  }
+
+  @Override
+  public void createCollection(CreateCollectionRequestBody body)
+      throws SolrBackend.AlreadyExistsException, SolrException {
+    try {
+      if (getCoreContainer().getCoreDescriptor(body.name) != null) {
+        throw new SolrBackend.AlreadyExistsException(body.name);
+      }
+      CoreAdminRequest.Create req = new CoreAdminRequest.Create();
+      req.setCoreName(body.name);
+      req.setInstanceDir(body.name);
+      if (body.config != null) {
+        req.setConfigSet(body.config);
+      }
+      req.process(getAdminClient());
+    } catch (SolrBackend.AlreadyExistsException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);
+    }
+  }
+
+  @Override
+  public void close() {
+    IOUtils.closeQuietly(backendAdminClient);
+    backendAdminClient = null;
+    try {
+      stop();
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
   }
 }

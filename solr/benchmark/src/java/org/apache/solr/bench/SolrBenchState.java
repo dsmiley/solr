@@ -37,17 +37,23 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import org.apache.solr.client.api.model.CreateCollectionRequestBody;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.request.QueryRequest;
 import org.apache.solr.client.solrj.request.SolrQuery;
 import org.apache.solr.client.solrj.request.UpdateRequest;
+import org.apache.solr.cloud.MiniSolrCloudCluster;
 import org.apache.solr.common.SolrInputDocument;
 import org.apache.solr.common.params.ModifiableSolrParams;
+import org.apache.solr.common.util.IOUtils;
 import org.apache.solr.common.util.NamedList;
 import org.apache.solr.common.util.ObjectReleaseTracker;
 import org.apache.solr.common.util.SolrNamedThreadFactory;
 import org.apache.solr.common.util.SuppressForbidden;
+import org.apache.solr.util.EmbeddedSolrBackend;
+import org.apache.solr.util.RemoteSolrBackend;
+import org.apache.solr.util.SolrBackend;
 import org.apache.solr.util.SolrTestNonSecureRandomProvider;
 import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Scope;
@@ -58,8 +64,8 @@ import org.openjdk.jmh.infra.BenchmarkParams;
 import org.openjdk.jmh.infra.Control;
 
 /**
- * JMH {@link State} class injected into all benchmarks. Selects a {@link SolrBenchBackend} at
- * runtime via the {@code solr.bench.backend} system property ({@code minicluster} by default).
+ * JMH {@link State} class injected into all benchmarks. Selects a {@link SolrBackend} at runtime
+ * via the {@code solr.bench.backend} system property ({@code minicluster} by default).
  *
  * <p>The collection name defaults to the simple class name of the benchmark (e.g. {@code
  * SimpleSearch}). Call {@link #setCollection(String)} before {@link #start(int, int, int)} to
@@ -68,7 +74,7 @@ import org.openjdk.jmh.infra.Control;
 @State(Scope.Benchmark)
 public class SolrBenchState {
 
-  private SolrBenchBackend backend;
+  private SolrBackend backend;
 
   /**
    * Client whose base URL already includes the collection path; returned by {@link #getClient()} so
@@ -170,14 +176,37 @@ public class SolrBenchState {
 
     this.indexDir = indexDir;
 
-    switch (backendType) {
-      case MINICLUSTER -> backend = new MiniClusterBackend(indexDir);
-      case EMBEDDED -> backend = new EmbeddedSolrBackend(indexDir);
-      case REMOTE -> backend = new RemoteSolrBackend();
-    }
-
     try {
-      backend.start(nodeCount);
+      switch (backendType) {
+        case MINICLUSTER -> {
+          System.setProperty("pkiHandlerPrivateKeyPath", "");
+          System.setProperty("pkiHandlerPublicKeyPath", "");
+          System.setProperty(
+              "solr.configset.default.confdir", "../server/solr/configsets/_default");
+          log("starting mini cluster at base directory: " + indexDir.toAbsolutePath());
+          MiniSolrCloudCluster cluster =
+              new MiniSolrCloudCluster.Builder(nodeCount, indexDir).formatZkServer(false).build();
+          // Wait for any pre-existing collections to become active
+          var clusterState = cluster.getZkStateReader().getClusterState();
+          for (String collectionName : clusterState.getCollectionNames()) {
+            cluster.waitForActiveCollection(collectionName, 30, TimeUnit.SECONDS);
+          }
+          backend = cluster;
+        }
+        case EMBEDDED -> {
+          var embedded = new EmbeddedSolrBackend(indexDir);
+          embedded.start();
+          backend = embedded;
+        }
+        case REMOTE -> {
+          String url = System.getProperty("solr.bench.url");
+          if (url == null || url.isBlank()) {
+            throw new IllegalStateException(
+                "solr.bench.backend=remote requires -Dsolr.bench.url=http://host:port/solr");
+          }
+          backend = new RemoteSolrBackend(url);
+        }
+      }
     } catch (Exception e) {
       if (!dirExisted && Files.exists(indexDir)) {
         try {
@@ -191,11 +220,15 @@ public class SolrBenchState {
     log("done starting " + backendType);
     log("");
 
-    registerConfigset(getFile("src/resources/configs/cloud-minimal"));
+    try {
+      backend.registerConfigset(getFile("src/resources/configs/cloud-minimal"));
+    } catch (SolrBackend.AlreadyExistsException e) {
+      // configset already registered from a prior run; reuse it
+    }
   }
 
   /** Returns the underlying backend; useful for backend-specific features (e.g. ZK host). */
-  public SolrBenchBackend getBackend() {
+  public SolrBackend getBackend() {
     return backend;
   }
 
@@ -208,7 +241,11 @@ public class SolrBenchState {
   }
 
   public void registerConfigset(Path configDir) throws Exception {
-    backend.registerConfigset(configDir);
+    try {
+      backend.registerConfigset(configDir);
+    } catch (SolrBackend.AlreadyExistsException e) {
+      // configset already registered from a prior run; reuse it
+    }
   }
 
   /**
@@ -219,10 +256,23 @@ public class SolrBenchState {
    */
   public boolean createCollection(String configName, Map<String, String> properties)
       throws Exception {
-    boolean created =
-        backend.createCollection(collection, configName, numShards, numReplicas, properties);
-    benchmarkClient = backend.getClient(collection);
-    if (created == false) {
+    boolean created;
+    try {
+      var body = new CreateCollectionRequestBody();
+      body.name = collection;
+      body.config = configName;
+      body.numShards = numShards;
+      body.replicationFactor = numReplicas;
+      if (!properties.isEmpty()) {
+        body.properties = properties;
+      }
+      backend.createCollection(body);
+      created = true;
+    } catch (SolrBackend.AlreadyExistsException e) {
+      created = false;
+    }
+    benchmarkClient = backend.newClient(collection);
+    if (!created) {
       log("Using EXISTING collection: " + collection);
     }
     return created;
@@ -234,12 +284,16 @@ public class SolrBenchState {
 
   public void forceMerge(int maxSegments) throws Exception {
     log("merging segments to " + maxSegments + " segments ...\n");
-    backend.forceMerge(collection, maxSegments);
+    new UpdateRequest()
+        .setAction(UpdateRequest.ACTION.OPTIMIZE, false, true, maxSegments)
+        .process(benchmarkClient);
   }
 
   public void waitForMerges() throws Exception {
     log("waiting for merges to finish...\n");
-    backend.waitForMerges(collection);
+    new UpdateRequest()
+        .setAction(UpdateRequest.ACTION.OPTIMIZE, false, true, Integer.MAX_VALUE)
+        .process(benchmarkClient);
   }
 
   public SplittableRandom getRandom() {
@@ -378,17 +432,12 @@ public class SolrBenchState {
   public void shutdown(BenchmarkParams benchmarkParams, BaseBenchState baseBenchState)
       throws Exception {
     BaseBenchState.dumpHeap(benchmarkParams);
-    try {
-      if (benchmarkClient != null) {
-        benchmarkClient.close();
-      }
-    } finally {
-      if (backend != null) {
-        backend.close();
-      }
+    IOUtils.closeQuietly(benchmarkClient);
+    if (backend != null) {
+      backend.close();
     }
 
-    logIndexDirSize(indexDir, backend instanceof MiniClusterBackend);
+    logIndexDirSize(indexDir, backend instanceof MiniSolrCloudCluster);
 
     String orr = ObjectReleaseTracker.clearObjectTrackerAndCheckEmpty();
     if (orr != null) {

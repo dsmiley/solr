@@ -56,11 +56,15 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import org.apache.lucene.tests.util.LuceneTestCase;
 import org.apache.solr.SolrTestCaseJ4;
+import org.apache.solr.client.api.model.CreateCollectionRequestBody;
+import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.apache.CloudLegacySolrClient;
 import org.apache.solr.client.solrj.impl.CloudSolrClient;
+import org.apache.solr.client.solrj.jetty.HttpJettySolrClient;
 import org.apache.solr.client.solrj.jetty.SSLConfig;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest;
 import org.apache.solr.client.solrj.request.ConfigSetAdminRequest;
+import org.apache.solr.client.solrj.response.CollectionAdminResponse;
 import org.apache.solr.common.SolrException;
 import org.apache.solr.common.SolrException.ErrorCode;
 import org.apache.solr.common.cloud.Aliases;
@@ -81,6 +85,7 @@ import org.apache.solr.core.CoreContainer;
 import org.apache.solr.core.OpenTelemetryConfigurator;
 import org.apache.solr.embedded.JettyConfig;
 import org.apache.solr.embedded.JettySolrRunner;
+import org.apache.solr.util.SolrBackend;
 import org.apache.solr.util.TimeOut;
 import org.apache.solr.util.tracing.TraceUtils;
 import org.apache.zookeeper.KeeperException;
@@ -90,7 +95,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /** "Mini" SolrCloud cluster to be used for testing */
-public class MiniSolrCloudCluster {
+public class MiniSolrCloudCluster implements SolrBackend {
 
   private static final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
   private static final URL PRE_GENERATED_PRIVATE_KEY_URL =
@@ -941,15 +946,97 @@ public class MiniSolrCloudCluster {
     }
   }
 
-  public void dumpMetrics(PrintStream out) throws IOException {
-    for (JettySolrRunner jetty : jettys) {
-      jetty.outputMetrics(out);
+  @Override
+  public void dumpMetrics(PrintStream out) throws SolrException {
+    try {
+      for (JettySolrRunner jetty : jettys) {
+        jetty.outputMetrics(out);
+      }
+    } catch (IOException e) {
+      throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);
     }
   }
 
-  public void dumpCoreInfo(PrintStream pw) throws IOException {
+  @Override
+  public void dumpCoreInfo(PrintStream pw) throws SolrException {
     for (JettySolrRunner jetty : jettys) {
       jetty.dumpCoresInfo(pw);
+    }
+  }
+
+  // ---- SolrBackend implementation ----
+
+  @Override
+  public SolrClient newClient(String collection) {
+    if (getJettySolrRunners().size() != 1) {
+      return new CloudSolrClient.Builder(getSolrClient().getClusterStateProvider())
+          .withDefaultCollection(collection)
+          .build();
+    }
+    return new HttpJettySolrClient.Builder(getJettySolrRunners().getFirst().getBaseUrl().toString())
+        .withDefaultCollection(collection)
+        .build();
+  }
+
+  @Override
+  public SolrClient getAdminClient() {
+    return getSolrClient();
+  }
+
+  @Override
+  public void registerConfigset(Path configDir, String name)
+      throws SolrException, SolrBackend.AlreadyExistsException {
+    try {
+      List<String> existing =
+          new ConfigSetAdminRequest.List().process(getAdminClient()).getConfigSets();
+      if (existing != null && existing.contains(name)) {
+        throw new SolrBackend.AlreadyExistsException(name);
+      }
+      uploadConfigSet(configDir.resolve("conf"), name);
+    } catch (SolrBackend.AlreadyExistsException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);
+    }
+  }
+
+  @Override
+  public void createCollection(CreateCollectionRequestBody body)
+      throws SolrBackend.AlreadyExistsException, SolrException {
+    try {
+      CollectionAdminResponse listResponse =
+          new CollectionAdminRequest.List().process(getAdminClient());
+      @SuppressWarnings("unchecked")
+      List<String> existing = (List<String>) listResponse.getResponse().get("collections");
+      if (existing != null && existing.contains(body.name)) {
+        throw new SolrBackend.AlreadyExistsException(body.name);
+      }
+      CollectionAdminRequest.Create create =
+          CollectionAdminRequest.createCollection(
+              body.name,
+              body.config,
+              body.numShards != null ? body.numShards : 1,
+              body.replicationFactor != null ? body.replicationFactor : 1);
+      if (body.properties != null && !body.properties.isEmpty()) {
+        create.setProperties(body.properties);
+      }
+      create.process(getAdminClient());
+      int shards = body.numShards != null ? body.numShards : 1;
+      int replicas = body.replicationFactor != null ? body.replicationFactor : 1;
+      waitForActiveCollection(body.name, 15, TimeUnit.SECONDS, shards, shards * replicas);
+    } catch (SolrBackend.AlreadyExistsException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);
+    }
+  }
+
+  @Override
+  public void close() {
+    try {
+      shutdown();
+    } catch (Exception e) {
+      throw new RuntimeException(e);
     }
   }
 
