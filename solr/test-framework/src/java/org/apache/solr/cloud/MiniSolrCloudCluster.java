@@ -968,6 +968,8 @@ public class MiniSolrCloudCluster implements SolrBackend {
 
   @Override
   public SolrClient newClient(String collection) {
+    // Single-node cluster: use HttpJettySolrClient to avoid ZooKeeper routing overhead.
+    // Multi-node cluster: use CloudSolrClient for correct shard/replica routing.
     if (getJettySolrRunners().size() != 1) {
       return new CloudSolrClient.Builder(getSolrClient().getClusterStateProvider())
           .withDefaultCollection(collection)

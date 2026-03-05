@@ -21,6 +21,7 @@ import java.io.PrintStream;
 import java.nio.file.Path;
 import org.apache.solr.client.api.model.CreateCollectionRequestBody;
 import org.apache.solr.client.solrj.SolrClient;
+import org.apache.solr.client.solrj.SolrRequest;
 import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest;
 import org.apache.solr.client.solrj.request.GenericSolrRequest;
@@ -123,9 +124,7 @@ public interface SolrBackend extends AutoCloseable {
     try {
       var request =
           new GenericSolrRequest(
-              org.apache.solr.client.solrj.SolrRequest.METHOD.GET,
-              "/admin/cores",
-              SolrParams.of("indexInfo", "true"));
+              SolrRequest.METHOD.GET, "/admin/cores", SolrParams.of("indexInfo", "true"));
       request.setResponseParser(new InputStreamResponseParser("json"));
       var response = request.process(getAdminClient());
       out.println(InputStreamResponseParser.consumeResponseToString(response.getResponse()));
