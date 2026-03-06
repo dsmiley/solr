@@ -37,7 +37,6 @@ import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
@@ -56,9 +55,7 @@ import org.apache.solr.client.solrj.embedded.EmbeddedSolrServer;
 import org.apache.solr.client.solrj.jetty.HttpJettySolrClient;
 import org.apache.solr.client.solrj.jetty.SSLConfig;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest;
-import org.apache.solr.client.solrj.request.CoreAdminRequest;
 import org.apache.solr.client.solrj.request.CoresApi;
-import org.apache.solr.common.SolrException;
 import org.apache.solr.common.util.IOUtils;
 import org.apache.solr.common.util.TimeSource;
 import org.apache.solr.common.util.Utils;
@@ -70,6 +67,7 @@ import org.apache.solr.servlet.RateLimitFilter;
 import org.apache.solr.servlet.RequiredSolrRequestFilter;
 import org.apache.solr.servlet.SolrDispatchFilter;
 import org.apache.solr.servlet.TracingFilter;
+import org.apache.solr.util.EmbeddedSolrBackend;
 import org.apache.solr.util.SocketProxy;
 import org.apache.solr.util.SolrBackend;
 import org.apache.solr.util.TimeOut;
@@ -935,37 +933,9 @@ public class JettySolrRunner implements SolrBackend {
   }
 
   @Override
-  public void registerConfigset(Path configDir, String name)
-      throws SolrException, SolrBackend.AlreadyExistsException {
-    try {
-      var ccs = getCoreContainer().getConfigSetService();
-      if (ccs.checkConfigExists(name)) {
-        throw new SolrBackend.AlreadyExistsException(name);
-      }
-      ccs.uploadConfig(name, configDir);
-    } catch (IOException e) {
-      throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);
-    }
-  }
-
-  @Override
-  public void createCollection(CollectionAdminRequest.Create create)
-      throws SolrBackend.AlreadyExistsException, SolrException {
-    String coreName = create.getCollectionName();
-    if (getCoreContainer().getCoreDescriptor(coreName) != null) {
-      throw new SolrBackend.AlreadyExistsException(coreName);
-    }
-    try {
-      CoreAdminRequest.Create req = new CoreAdminRequest.Create();
-      req.setCoreName(coreName);
-      req.setInstanceDir(coreName);
-      if (create.getConfigName() != null) {
-        req.setConfigSet(create.getConfigName());
-      }
-      req.process(getAdminClient());
-    } catch (Exception e) {
-      throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);
-    }
+  public void createCollection(CollectionAdminRequest.Create create) {
+    //noinspection resource
+    new EmbeddedSolrBackend(backendAdminClient).createCollection(create);
   }
 
   @Override

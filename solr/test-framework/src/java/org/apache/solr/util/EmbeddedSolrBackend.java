@@ -16,7 +16,6 @@
  */
 package org.apache.solr.util;
 
-import java.io.IOException;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
@@ -37,12 +36,25 @@ import org.apache.solr.core.CoreContainer;
 public class EmbeddedSolrBackend implements SolrBackend {
 
   private final CoreContainer coreContainer;
-  private EmbeddedSolrServer adminClient;
+  private final EmbeddedSolrServer adminClient;
 
-  public EmbeddedSolrBackend(Path solrHome) throws IOException {
+  public EmbeddedSolrBackend(Path solrHome) {
     coreContainer = new CoreContainer(solrHome, new Properties());
     coreContainer.load();
     adminClient = new EmbeddedSolrServer(coreContainer, null);
+  }
+
+  /**
+   * @lucene.internal
+   */
+  public EmbeddedSolrBackend(EmbeddedSolrServer solrServer) {
+    this.coreContainer = solrServer.getCoreContainer();
+    this.adminClient = solrServer;
+  }
+
+  @Override
+  public CoreContainer getCoreContainer() {
+    return coreContainer;
   }
 
   @Override
@@ -53,20 +65,6 @@ public class EmbeddedSolrBackend implements SolrBackend {
   @Override
   public EmbeddedSolrServer getAdminClient() {
     return adminClient;
-  }
-
-  @Override
-  public void registerConfigset(Path configDir, String name)
-      throws SolrException, SolrBackend.AlreadyExistsException {
-    try {
-      var ccs = coreContainer.getConfigSetService();
-      if (ccs.checkConfigExists(name)) {
-        throw new SolrBackend.AlreadyExistsException(name);
-      }
-      ccs.uploadConfig(name, configDir);
-    } catch (IOException e) {
-      throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);
-    }
   }
 
   @Override

@@ -28,14 +28,12 @@ import org.apache.solr.client.solrj.request.MetricsRequest;
 import org.apache.solr.client.solrj.response.InputStreamResponseParser;
 import org.apache.solr.common.SolrException;
 import org.apache.solr.common.params.SolrParams;
+import org.apache.solr.core.CoreContainer;
 import org.apache.solr.embedded.JettySolrRunner;
 
 /**
- * Abstraction over a running Solr deployment for use in tests and benchmarks. Implementations:
- * {@link org.apache.solr.cloud.MiniSolrCloudCluster} (embedded SolrCloud, multi-node), {@link
- * JettySolrRunner} (embedded Solr node HTTP server), {@link EmbeddedSolrBackend} (embedded Solr
- * node with native/direct SolrClient), {@link RemoteSolrBackend} (HTTP access to an externally
- * managed Solr).
+ * Abstraction over a running Solr deployment for use in tests and benchmarks. The abstraction
+ * normalizes how to shut down and perform other common operations as the methods indicate.
  */
 public interface SolrBackend extends AutoCloseable {
 
@@ -47,45 +45,50 @@ public interface SolrBackend extends AutoCloseable {
   SolrClient newClient(String collection);
 
   /**
-   * Returns the admin (collection-less) {@link SolrClient} owned by this backend. Created eagerly
-   * during backend initialization. The caller must NOT close it; it is released when this backend
-   * is {@link #close()}d.
+   * Returns the admin (collection-less) {@link SolrClient} owned by this backend, to be used for
+   * tasks that are not the subject of what is being tested, and thus the details of the type or
+   * configuration of this client doesn't matter. The caller must NOT close it; it is released when
+   * this backend is {@link #close()}d.
    */
   SolrClient getAdminClient();
 
   /**
-   * Ensures a configset named {@code name} is registered on the server. Throws {@link
-   * AlreadyExistsException} if a configset with that name already exists. For embedded/MiniCluster
-   * implementations, uses {@code ConfigSetService} directly (no HTTP). For remote implementations,
-   * uses zip + {@code ConfigSetAdminRequest.Upload}.
+   * <em>If</em> a configset by this name doesn't exist, this will upload it. Throws {@link
+   * AlreadyExistsException} if a configset with that name already exists. Tests/benchmarks that
+   * want to test how this works should not use this to do so.
    *
-   * <p>Must be called before {@link #createCollection}.
-   *
-   * @param configDir directory whose {@code conf/} subdirectory contains the configset files
+   * @param configDir directory that <em>directly</em> contains the configset files (no conf/).
    * @param name configset name to register
    */
-  void registerConfigset(Path configDir, String name) throws SolrException, AlreadyExistsException;
-
-  /** Convenience overload that derives the configset name from {@code configDir.getFileName()}. */
-  default void registerConfigset(Path configDir) throws SolrException, AlreadyExistsException {
-    registerConfigset(configDir, configDir.getFileName().toString());
+  default void registerConfigset(Path configDir, String name) throws AlreadyExistsException {
+    try {
+      var ccs = getCoreContainer().getConfigSetService();
+      if (ccs.checkConfigExists(name)) {
+        throw new SolrBackend.AlreadyExistsException(name);
+      }
+      ccs.uploadConfig(name, configDir);
+    } catch (SolrBackend.AlreadyExistsException | SolrException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);
+    }
   }
 
   /**
    * Creates a collection (or core for single-node backends). Cloud backends honour {@code
    * numShards} and {@code replicationFactor}; single-node backends ({@link JettySolrRunner}, {@link
-   * EmbeddedSolrBackend}) ignore those fields.
+   * EmbeddedSolrBackend}) ignore those fields. Tests/benchmarks that want to test how this works
+   * should not use this to do so.
    *
    * @throws AlreadyExistsException if the collection/core already exists.
    */
-  void createCollection(CollectionAdminRequest.Create create)
-      throws AlreadyExistsException, SolrException;
+  void createCollection(CollectionAdminRequest.Create create) throws AlreadyExistsException;
 
   /**
    * Thrown by {@link #createCollection} and {@link #registerConfigset} when the named collection or
    * configset already exists. Callers can catch this to implement "create if absent" logic.
    */
-  class AlreadyExistsException extends Exception {
+  class AlreadyExistsException extends RuntimeException {
     public AlreadyExistsException(String name) {
       super(name + " already exists");
     }
@@ -105,34 +108,39 @@ public interface SolrBackend extends AutoCloseable {
   }
 
   /**
-   * Reloads a collection (typically to clear caches). For single-node implementations this reloads
-   * the named core. Default implementation uses {@code CollectionAdminRequest.reloadCollection}.
+   * Provides access to an embedded/in-process {@link org.apache.solr.core.CoreContainer} -- if
+   * available (else null). If there are more than one nodes, then one is returned.
+   *
+   * @return can be null.
    */
-  default void reloadCollection(String name) throws SolrException {
+  CoreContainer getCoreContainer();
+
+  /** Reloads a collection or core by this name. The purpose is typically to clear caches. */
+  default void reloadCollection(String name) {
     try {
       getAdminClient().request(CollectionAdminRequest.reloadCollection(name));
     } catch (SolrServerException | IOException e) {
-      throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);
+      throw new RuntimeException(e);
     }
   }
 
   /** Dumps Prometheus-format metrics to {@code out}. No-op is an acceptable implementation. */
-  default void dumpMetrics(PrintStream out) throws SolrException {
+  default void dumpMetrics(PrintStream out) {
     try {
       var request = new MetricsRequest();
       request.setResponseParser(new InputStreamResponseParser("prometheus"));
       var response = request.process(getAdminClient());
       out.println(InputStreamResponseParser.consumeResponseToString(response.getResponse()));
     } catch (SolrServerException | IOException e) {
-      throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);
+      throw new RuntimeException(e);
     }
   }
 
   /**
-   * Dumps JSON core/collection info to {@code out}. No-op is an acceptable implementation. Default
-   * uses {@code GET /admin/cores?indexInfo=true}.
+   * Dumps JSON-format information for all cores to {@code out}. No-op is an acceptable
+   * implementation. Default uses {@code GET /admin/cores?indexInfo=true}.
    */
-  default void dumpCoreInfo(PrintStream out) throws SolrException {
+  default void dumpCoreInfo(PrintStream out) {
     try {
       var request =
           new GenericSolrRequest(
@@ -141,7 +149,7 @@ public interface SolrBackend extends AutoCloseable {
       var response = request.process(getAdminClient());
       out.println(InputStreamResponseParser.consumeResponseToString(response.getResponse()));
     } catch (SolrServerException | IOException e) {
-      throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);
+      throw new RuntimeException(e);
     }
   }
 

@@ -976,22 +976,6 @@ public class MiniSolrCloudCluster implements SolrBackend {
   }
 
   @Override
-  public void registerConfigset(Path configDir, String name)
-      throws SolrException, SolrBackend.AlreadyExistsException {
-    try {
-      var ccs = getJettySolrRunners().getFirst().getCoreContainer().getConfigSetService();
-      if (ccs.checkConfigExists(name)) {
-        throw new SolrBackend.AlreadyExistsException(name);
-      }
-      ccs.uploadConfig(name, configDir);
-    } catch (SolrBackend.AlreadyExistsException | SolrException e) {
-      throw e;
-    } catch (Exception e) {
-      throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);
-    }
-  }
-
-  @Override
   public void createCollection(CollectionAdminRequest.Create create)
       throws SolrBackend.AlreadyExistsException, SolrException {
     String collectionName = create.getCollectionName();
@@ -1006,6 +990,11 @@ public class MiniSolrCloudCluster implements SolrBackend {
     } catch (Exception e) {
       throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);
     }
+  }
+
+  @Override
+  public CoreContainer getCoreContainer() {
+    return jettys.isEmpty() ? null : jettys.get(0).getCoreContainer();
   }
 
   @Override

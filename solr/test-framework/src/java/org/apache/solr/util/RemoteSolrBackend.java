@@ -45,6 +45,11 @@ public class RemoteSolrBackend implements SolrBackend {
   }
 
   @Override
+  public org.apache.solr.core.CoreContainer getCoreContainer() {
+    return null;
+  }
+
+  @Override
   public SolrClient newClient(String collection) {
     return new HttpJettySolrClient.Builder(adminClient.getBaseURL())
         .withDefaultCollection(collection)
@@ -81,23 +86,6 @@ public class RemoteSolrBackend implements SolrBackend {
     }
   }
 
-  @Override
-  public void createCollection(CollectionAdminRequest.Create create)
-      throws SolrBackend.AlreadyExistsException, SolrException {
-    String collectionName = create.getCollectionName();
-    try {
-      List<String> existing = CollectionAdminRequest.listCollections(adminClient);
-      if (existing != null && existing.contains(collectionName)) {
-        throw new SolrBackend.AlreadyExistsException(collectionName);
-      }
-      create.process(adminClient);
-    } catch (AlreadyExistsException | SolrException e) {
-      throw e;
-    } catch (Exception e) {
-      throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);
-    }
-  }
-
   /** Packages {@code sourceDir} contents into a zip file. */
   private static void zipDirectory(Path sourceDir, Path targetZip) throws IOException {
     try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(targetZip))) {
@@ -113,6 +101,23 @@ public class RemoteSolrBackend implements SolrBackend {
                   throw new RuntimeException(e);
                 }
               });
+    }
+  }
+
+  @Override
+  public void createCollection(CollectionAdminRequest.Create create)
+      throws SolrBackend.AlreadyExistsException, SolrException {
+    String collectionName = create.getCollectionName();
+    try {
+      List<String> existing = CollectionAdminRequest.listCollections(adminClient);
+      if (existing != null && existing.contains(collectionName)) {
+        throw new SolrBackend.AlreadyExistsException(collectionName);
+      }
+      create.process(adminClient);
+    } catch (AlreadyExistsException | SolrException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);
     }
   }
 
