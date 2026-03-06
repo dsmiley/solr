@@ -44,7 +44,7 @@ public class BaseBenchState {
   public static final long RANDOM_SEED;
 
   static {
-    EnvUtils.getProperties();// trigger env to system property synchronization
+    EnvUtils.getProperties(); // trigger env to system property synchronization
 
     Long seed = Long.getLong("solr.bench.seed");
 
