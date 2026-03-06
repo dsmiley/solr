@@ -21,9 +21,9 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
-import org.apache.solr.client.api.model.CreateCollectionRequestBody;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.embedded.EmbeddedSolrServer;
+import org.apache.solr.client.solrj.request.CollectionAdminRequest;
 import org.apache.solr.common.SolrException;
 import org.apache.solr.common.util.IOUtils;
 import org.apache.solr.core.CoreContainer;
@@ -70,19 +70,20 @@ public class EmbeddedSolrBackend implements SolrBackend {
   }
 
   @Override
-  public void createCollection(CreateCollectionRequestBody body)
+  public void createCollection(CollectionAdminRequest.Create create)
       throws SolrBackend.AlreadyExistsException, SolrException {
-    if (coreContainer.getCoreDescriptor(body.name) != null) {
-      throw new SolrBackend.AlreadyExistsException(body.name);
+    String coreName = create.getCollectionName();
+    if (coreContainer.getCoreDescriptor(coreName) != null) {
+      throw new SolrBackend.AlreadyExistsException(coreName);
     }
     Map<String, String> coreParams = new HashMap<>();
-    if (body.config != null) {
-      coreParams.put("configSet", body.config);
+    if (create.getConfigName() != null) {
+      coreParams.put("configSet", create.getConfigName());
     }
-    if (body.properties != null) {
-      coreParams.putAll(body.properties);
+    if (create.getProperties() != null) {
+      create.getProperties().forEach((k, v) -> coreParams.put(k.toString(), v.toString()));
     }
-    coreContainer.create(body.name, coreParams);
+    coreContainer.create(coreName, coreParams);
   }
 
   @Override

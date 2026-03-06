@@ -56,7 +56,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import org.apache.lucene.tests.util.LuceneTestCase;
 import org.apache.solr.SolrTestCaseJ4;
-import org.apache.solr.client.api.model.CreateCollectionRequestBody;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.apache.CloudLegacySolrClient;
 import org.apache.solr.client.solrj.impl.CloudSolrClient;
@@ -993,25 +992,17 @@ public class MiniSolrCloudCluster implements SolrBackend {
   }
 
   @Override
-  public void createCollection(CreateCollectionRequestBody body)
+  public void createCollection(CollectionAdminRequest.Create create)
       throws SolrBackend.AlreadyExistsException, SolrException {
+    String collectionName = create.getCollectionName();
+    if (getZkStateReader().getClusterState().hasCollection(collectionName)) {
+      throw new SolrBackend.AlreadyExistsException(collectionName);
+    }
     try {
-      CollectionAdminRequest.Create create =
-          CollectionAdminRequest.createCollection(
-              body.name,
-              body.config,
-              body.numShards != null ? body.numShards : 1,
-              body.replicationFactor != null ? body.replicationFactor : 1);
-      if (body.properties != null && !body.properties.isEmpty()) {
-        create.setProperties(body.properties);
-      }
       create.process(getAdminClient());
-      int shards = body.numShards != null ? body.numShards : 1;
-      int replicas = body.replicationFactor != null ? body.replicationFactor : 1;
-      waitForActiveCollection(body.name, 15, TimeUnit.SECONDS, shards, shards * replicas);
-    } catch (SolrException e) {
-      AlreadyExistsException.rethrowIfAlreadyExists(e, body.name);
-      throw e;
+      int shards = create.getNumShards() != null ? create.getNumShards() : 1;
+      int replicas = create.getReplicationFactor() != null ? create.getReplicationFactor() : 1;
+      waitForActiveCollection(collectionName, 15, TimeUnit.SECONDS, shards, shards * replicas);
     } catch (Exception e) {
       throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);
     }

@@ -19,7 +19,6 @@ package org.apache.solr.util;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.file.Path;
-import org.apache.solr.client.api.model.CreateCollectionRequestBody;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrRequest;
 import org.apache.solr.client.solrj.SolrServerException;
@@ -79,7 +78,7 @@ public interface SolrBackend extends AutoCloseable {
    *
    * @throws AlreadyExistsException if the collection/core already exists.
    */
-  void createCollection(CreateCollectionRequestBody body)
+  void createCollection(CollectionAdminRequest.Create create)
       throws AlreadyExistsException, SolrException;
 
   /**

@@ -49,13 +49,13 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import org.apache.solr.client.api.model.CreateCollectionRequestBody;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.apache.HttpSolrClient;
 import org.apache.solr.client.solrj.embedded.EmbeddedSolrServer;
 import org.apache.solr.client.solrj.jetty.HttpJettySolrClient;
 import org.apache.solr.client.solrj.jetty.SSLConfig;
+import org.apache.solr.client.solrj.request.CollectionAdminRequest;
 import org.apache.solr.client.solrj.request.CoreAdminRequest;
 import org.apache.solr.client.solrj.request.CoresApi;
 import org.apache.solr.common.SolrException;
@@ -949,17 +949,18 @@ public class JettySolrRunner implements SolrBackend {
   }
 
   @Override
-  public void createCollection(CreateCollectionRequestBody body)
+  public void createCollection(CollectionAdminRequest.Create create)
       throws SolrBackend.AlreadyExistsException, SolrException {
-    if (getCoreContainer().getCoreDescriptor(body.name) != null) {
-      throw new SolrBackend.AlreadyExistsException(body.name);
+    String coreName = create.getCollectionName();
+    if (getCoreContainer().getCoreDescriptor(coreName) != null) {
+      throw new SolrBackend.AlreadyExistsException(coreName);
     }
     try {
       CoreAdminRequest.Create req = new CoreAdminRequest.Create();
-      req.setCoreName(body.name);
-      req.setInstanceDir(body.name);
-      if (body.config != null) {
-        req.setConfigSet(body.config);
+      req.setCoreName(coreName);
+      req.setInstanceDir(coreName);
+      if (create.getConfigName() != null) {
+        req.setConfigSet(create.getConfigName());
       }
       req.process(getAdminClient());
     } catch (Exception e) {

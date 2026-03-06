@@ -22,7 +22,6 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
-import org.apache.solr.client.api.model.CreateCollectionRequestBody;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.jetty.HttpJettySolrClient;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest;
@@ -83,21 +82,16 @@ public class RemoteSolrBackend implements SolrBackend {
   }
 
   @Override
-  public void createCollection(CreateCollectionRequestBody body)
+  public void createCollection(CollectionAdminRequest.Create create)
       throws SolrBackend.AlreadyExistsException, SolrException {
+    String collectionName = create.getCollectionName();
     try {
-      CollectionAdminRequest.Create create =
-          CollectionAdminRequest.createCollection(
-              body.name,
-              body.config,
-              body.numShards != null ? body.numShards : 1,
-              body.replicationFactor != null ? body.replicationFactor : 1);
-      if (body.properties != null && !body.properties.isEmpty()) {
-        create.setProperties(body.properties);
+      List<String> existing = CollectionAdminRequest.listCollections(adminClient);
+      if (existing != null && existing.contains(collectionName)) {
+        throw new SolrBackend.AlreadyExistsException(collectionName);
       }
       create.process(adminClient);
-    } catch (SolrException e) {
-      AlreadyExistsException.rethrowIfAlreadyExists(e, body.name);
+    } catch (AlreadyExistsException | SolrException e) {
       throw e;
     } catch (Exception e) {
       throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);

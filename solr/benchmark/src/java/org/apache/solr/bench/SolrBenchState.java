@@ -37,9 +37,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import org.apache.solr.client.api.model.CreateCollectionRequestBody;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrServerException;
+import org.apache.solr.client.solrj.request.CollectionAdminRequest;
 import org.apache.solr.client.solrj.request.QueryRequest;
 import org.apache.solr.client.solrj.request.SolrQuery;
 import org.apache.solr.client.solrj.request.UpdateRequest;
@@ -246,16 +246,14 @@ public class SolrBenchState {
    */
   public boolean createCollection(String configName, Map<String, String> properties)
       throws Exception {
-    var body = new CreateCollectionRequestBody();
-    body.name = collection;
-    body.config = configName;
-    body.numShards = numShards;
-    body.replicationFactor = replicationFactor;
+    var create =
+        CollectionAdminRequest.createCollection(
+            collection, configName, numShards, replicationFactor);
     if (!properties.isEmpty()) {
-      body.properties = properties;
+      create.setProperties(properties);
     }
     try {
-      backend.createCollection(body);
+      backend.createCollection(create);
       benchmarkClient = backend.newClient(collection);
       return true;
     } catch (SolrBackend.AlreadyExistsException e) {
