@@ -26,6 +26,7 @@ import javax.management.MBeanServer;
 import javax.management.ObjectName;
 import org.apache.commons.io.file.PathUtils;
 import org.apache.solr.bench.generators.SolrGen;
+import org.apache.solr.common.util.EnvUtils;
 import org.apache.solr.common.util.SuppressForbidden;
 import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Scope;
@@ -43,6 +44,8 @@ public class BaseBenchState {
   public static final long RANDOM_SEED;
 
   static {
+    EnvUtils.getProperties();// trigger env to system property synchronization
+
     Long seed = Long.getLong("solr.bench.seed");
 
     if (seed == null) {
