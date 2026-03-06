@@ -53,14 +53,14 @@ public interface SolrBackend extends AutoCloseable {
   SolrClient getAdminClient();
 
   /**
-   * <em>If</em> a configset by this name doesn't exist, this will upload it. Throws {@link
-   * AlreadyExistsException} if a configset with that name already exists. Tests/benchmarks that
+   * <em>If</em> a configSet by this name doesn't exist, this will upload it. Throws {@link
+   * AlreadyExistsException} if a configSet with that name already exists. Tests/benchmarks that
    * want to test how this works should not use this to do so.
    *
-   * @param configDir directory that <em>directly</em> contains the configset files (no conf/).
-   * @param name configset name to register
+   * @param configDir directory that <em>directly</em> contains the configSet files (no conf/).
+   * @param name configSet name to register
    */
-  default void registerConfigset(Path configDir, String name) throws AlreadyExistsException {
+  default void createConfigSet(Path configDir, String name) throws AlreadyExistsException {
     try {
       var ccs = getCoreContainer().getConfigSetService();
       if (ccs.checkConfigExists(name)) {
@@ -85,8 +85,8 @@ public interface SolrBackend extends AutoCloseable {
   void createCollection(CollectionAdminRequest.Create create) throws AlreadyExistsException;
 
   /**
-   * Thrown by {@link #createCollection} and {@link #registerConfigset} when the named collection or
-   * configset already exists. Callers can catch this to implement "create if absent" logic.
+   * Thrown by {@link #createCollection} and {@link #createConfigSet} when the named collection or
+   * configSet already exists. Callers can catch this to implement "create if absent" logic.
    */
   class AlreadyExistsException extends RuntimeException {
     public AlreadyExistsException(String name) {

@@ -62,7 +62,7 @@ public class RemoteSolrBackend implements SolrBackend {
   }
 
   @Override
-  public void registerConfigset(Path configDir, String name)
+  public void createConfigSet(Path configDir, String name)
       throws SolrException, SolrBackend.AlreadyExistsException {
     try {
       List<String> existing = new ConfigSetAdminRequest.List().process(adminClient).getConfigSets();

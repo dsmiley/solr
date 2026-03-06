@@ -570,10 +570,10 @@ public class MiniSolrCloudCluster implements SolrBackend {
   }
 
   /**
-   * Upload a config set
+   * Upload a configSet, possibly overwriting (creating files, updating files, NOT deleting files).
    *
    * @param configDir a path to the config set to upload
-   * @param configName the name to give the configset
+   * @param configName the name to give the configSet
    */
   public void uploadConfigSet(Path configDir, String configName) throws IOException {
     try (SolrZkClient zkClient =

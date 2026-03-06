@@ -218,7 +218,7 @@ public class SolrBenchState {
     log("done starting " + backendType);
     log("");
 
-    registerConfigset(getFile("src/resources/configs/cloud-minimal"));
+    createConfigSet(getFile("src/resources/configs/cloud-minimal"));
   }
 
   /** Returns the underlying backend; useful for backend-specific features (e.g. ZK host). */
@@ -234,12 +234,12 @@ public class SolrBenchState {
     return benchmarkClient;
   }
 
-  /** The path to a configset */
-  public void registerConfigset(Path configDir) throws Exception {
+  /** The path to a configSet */
+  public void createConfigSet(Path configDir) throws Exception {
     try {
-      backend.registerConfigset(configDir.resolve("conf"), configDir.getFileName().toString());
+      backend.createConfigSet(configDir.resolve("conf"), configDir.getFileName().toString());
     } catch (SolrBackend.AlreadyExistsException e) {
-      // configset already registered from a prior run; reuse it
+      // configSet already registered from a prior run; reuse it
     }
   }
 
@@ -463,7 +463,7 @@ public class SolrBenchState {
 
   /**
    * Resolves a resource path from the classpath or the local filesystem (relative to CWD). Use this
-   * to locate configset directories bundled with the benchmark module.
+   * to locate configSet directories bundled with the benchmark module.
    */
   public static Path getFile(String name) {
     final URL url =
