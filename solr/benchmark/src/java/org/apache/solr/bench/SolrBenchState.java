@@ -179,18 +179,8 @@ public class SolrBenchState {
     try {
       switch (backendType) {
         case MINICLUSTER -> {
-          System.setProperty("pkiHandlerPrivateKeyPath", "");
-          System.setProperty("pkiHandlerPublicKeyPath", "");
-          System.setProperty(
-              "solr.configset.default.confdir", "../server/solr/configsets/_default");
-          log("starting mini cluster at base directory: " + indexDir.toAbsolutePath());
           MiniSolrCloudCluster cluster =
               new MiniSolrCloudCluster.Builder(nodeCount, indexDir).formatZkServer(false).build();
-          // Wait for any pre-existing collections to become active
-          var clusterState = cluster.getZkStateReader().getClusterState();
-          for (String collectionName : clusterState.getCollectionNames()) {
-            cluster.waitForActiveCollection(collectionName, 30, TimeUnit.SECONDS);
-          }
           backend = cluster;
         }
         case EMBEDDED -> {
@@ -256,26 +246,23 @@ public class SolrBenchState {
    */
   public boolean createCollection(String configName, Map<String, String> properties)
       throws Exception {
-    boolean created;
+    var body = new CreateCollectionRequestBody();
+    body.name = collection;
+    body.config = configName;
+    body.numShards = numShards;
+    body.replicationFactor = numReplicas;
+    if (!properties.isEmpty()) {
+      body.properties = properties;
+    }
     try {
-      var body = new CreateCollectionRequestBody();
-      body.name = collection;
-      body.config = configName;
-      body.numShards = numShards;
-      body.replicationFactor = numReplicas;
-      if (!properties.isEmpty()) {
-        body.properties = properties;
-      }
       backend.createCollection(body);
-      created = true;
+      benchmarkClient = backend.newClient(collection);
+      return true;
     } catch (SolrBackend.AlreadyExistsException e) {
-      created = false;
-    }
-    benchmarkClient = backend.newClient(collection);
-    if (!created) {
       log("Using EXISTING collection: " + collection);
+      benchmarkClient = backend.newClient(collection);
+      return false;
     }
-    return created;
   }
 
   public void reloadCollection() throws Exception {

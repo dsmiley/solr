@@ -16,10 +16,8 @@
  */
 package org.apache.solr.util;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -76,28 +74,14 @@ public class EmbeddedSolrBackend implements SolrBackend {
   @Override
   public void registerConfigset(Path configDir, String name)
       throws SolrException, SolrBackend.AlreadyExistsException {
-    Path targetConfDir = solrHome.resolve("configsets").resolve(name).resolve("conf");
-    if (Files.exists(targetConfDir)) {
-      throw new SolrBackend.AlreadyExistsException(name);
-    }
     try {
-      Path sourceConfDir = configDir.resolve("conf");
-      Files.createDirectories(targetConfDir);
-      try (var stream = Files.walk(sourceConfDir)) {
-        stream.forEach(
-            source -> {
-              try {
-                Path target = targetConfDir.resolve(sourceConfDir.relativize(source));
-                if (Files.isDirectory(source)) {
-                  Files.createDirectories(target);
-                } else {
-                  Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
-                }
-              } catch (IOException e) {
-                throw new RuntimeException(e);
-              }
-            });
+      var ccs = coreContainer.getConfigSetService();
+      if (ccs.checkConfigExists(name)) {
+        throw new SolrBackend.AlreadyExistsException(name);
       }
+      ccs.uploadConfig(name, configDir.resolve("conf"));
+    } catch (SolrBackend.AlreadyExistsException e) {
+      throw e;
     } catch (Exception e) {
       throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);
     }
@@ -106,10 +90,10 @@ public class EmbeddedSolrBackend implements SolrBackend {
   @Override
   public void createCollection(CreateCollectionRequestBody body)
       throws SolrBackend.AlreadyExistsException, SolrException {
+    if (coreContainer.getCoreDescriptor(body.name) != null) {
+      throw new SolrBackend.AlreadyExistsException(body.name);
+    }
     try {
-      if (coreContainer.getCoreDescriptor(body.name) != null) {
-        throw new SolrBackend.AlreadyExistsException(body.name);
-      }
       Map<String, String> coreParams = new HashMap<>();
       if (body.config != null) {
         coreParams.put("configSet", body.config);
@@ -118,8 +102,6 @@ public class EmbeddedSolrBackend implements SolrBackend {
         coreParams.putAll(body.properties);
       }
       coreContainer.create(body.name, coreParams);
-    } catch (SolrBackend.AlreadyExistsException e) {
-      throw e;
     } catch (Exception e) {
       throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);
     }

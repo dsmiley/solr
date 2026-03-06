@@ -53,6 +53,7 @@ import org.apache.solr.client.api.model.CreateCollectionRequestBody;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.apache.HttpSolrClient;
+import org.apache.solr.client.solrj.embedded.EmbeddedSolrServer;
 import org.apache.solr.client.solrj.jetty.SSLConfig;
 import org.apache.solr.client.solrj.request.CoreAdminRequest;
 import org.apache.solr.client.solrj.request.CoresApi;
@@ -146,7 +147,7 @@ public class JettySolrRunner implements SolrBackend {
 
   private String host;
 
-  private volatile HttpSolrClient backendAdminClient;
+  private volatile EmbeddedSolrServer backendAdminClient;
 
   private volatile boolean started = false;
 
@@ -591,7 +592,7 @@ public class JettySolrRunner implements SolrBackend {
       setProtocolAndHost();
 
       IOUtils.closeQuietly(backendAdminClient);
-      backendAdminClient = new HttpSolrClient.Builder(getBaseUrl().toString()).build();
+      backendAdminClient = new EmbeddedSolrServer(getCoreContainer(), null);
 
       if (enableProxy) {
         if (started) {
@@ -951,10 +952,10 @@ public class JettySolrRunner implements SolrBackend {
   @Override
   public void createCollection(CreateCollectionRequestBody body)
       throws SolrBackend.AlreadyExistsException, SolrException {
+    if (getCoreContainer().getCoreDescriptor(body.name) != null) {
+      throw new SolrBackend.AlreadyExistsException(body.name);
+    }
     try {
-      if (getCoreContainer().getCoreDescriptor(body.name) != null) {
-        throw new SolrBackend.AlreadyExistsException(body.name);
-      }
       CoreAdminRequest.Create req = new CoreAdminRequest.Create();
       req.setCoreName(body.name);
       req.setInstanceDir(body.name);
@@ -962,8 +963,6 @@ public class JettySolrRunner implements SolrBackend {
         req.setConfigSet(body.config);
       }
       req.process(getAdminClient());
-    } catch (SolrBackend.AlreadyExistsException e) {
-      throw e;
     } catch (Exception e) {
       throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);
     }

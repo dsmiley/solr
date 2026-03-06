@@ -28,7 +28,6 @@ import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.jetty.HttpJettySolrClient;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest;
 import org.apache.solr.client.solrj.request.ConfigSetAdminRequest;
-import org.apache.solr.client.solrj.response.CollectionAdminResponse;
 import org.apache.solr.common.SolrException;
 import org.apache.solr.common.util.IOUtils;
 
@@ -88,12 +87,6 @@ public class RemoteSolrBackend implements SolrBackend {
   public void createCollection(CreateCollectionRequestBody body)
       throws SolrBackend.AlreadyExistsException, SolrException {
     try {
-      CollectionAdminResponse listResponse = new CollectionAdminRequest.List().process(adminClient);
-      @SuppressWarnings("unchecked")
-      List<String> existing = (List<String>) listResponse.getResponse().get("collections");
-      if (existing != null && existing.contains(body.name)) {
-        throw new SolrBackend.AlreadyExistsException(body.name);
-      }
       CollectionAdminRequest.Create create =
           CollectionAdminRequest.createCollection(
               body.name,
@@ -104,7 +97,10 @@ public class RemoteSolrBackend implements SolrBackend {
         create.setProperties(body.properties);
       }
       create.process(adminClient);
-    } catch (SolrBackend.AlreadyExistsException e) {
+    } catch (SolrException e) {
+      if (e.getMessage() != null && e.getMessage().contains("already exists")) {
+        throw new SolrBackend.AlreadyExistsException(body.name);
+      }
       throw e;
     } catch (Exception e) {
       throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);

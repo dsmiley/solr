@@ -60,11 +60,9 @@ import org.apache.solr.client.api.model.CreateCollectionRequestBody;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.apache.CloudLegacySolrClient;
 import org.apache.solr.client.solrj.impl.CloudSolrClient;
-import org.apache.solr.client.solrj.jetty.HttpJettySolrClient;
 import org.apache.solr.client.solrj.jetty.SSLConfig;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest;
 import org.apache.solr.client.solrj.request.ConfigSetAdminRequest;
-import org.apache.solr.client.solrj.response.CollectionAdminResponse;
 import org.apache.solr.common.SolrException;
 import org.apache.solr.common.SolrException.ErrorCode;
 import org.apache.solr.common.cloud.Aliases;
@@ -968,14 +966,7 @@ public class MiniSolrCloudCluster implements SolrBackend {
 
   @Override
   public SolrClient newClient(String collection) {
-    // Single-node cluster: use HttpJettySolrClient to avoid ZooKeeper routing overhead.
-    // Multi-node cluster: use CloudSolrClient for correct shard/replica routing.
-    if (getJettySolrRunners().size() != 1) {
-      return new CloudSolrClient.Builder(getSolrClient().getClusterStateProvider())
-          .withDefaultCollection(collection)
-          .build();
-    }
-    return new HttpJettySolrClient.Builder(getJettySolrRunners().getFirst().getBaseUrl().toString())
+    return new CloudSolrClient.Builder(getSolrClient().getClusterStateProvider())
         .withDefaultCollection(collection)
         .build();
   }
@@ -989,12 +980,11 @@ public class MiniSolrCloudCluster implements SolrBackend {
   public void registerConfigset(Path configDir, String name)
       throws SolrException, SolrBackend.AlreadyExistsException {
     try {
-      List<String> existing =
-          new ConfigSetAdminRequest.List().process(getAdminClient()).getConfigSets();
-      if (existing != null && existing.contains(name)) {
+      var ccs = getJettySolrRunners().getFirst().getCoreContainer().getConfigSetService();
+      if (ccs.checkConfigExists(name)) {
         throw new SolrBackend.AlreadyExistsException(name);
       }
-      uploadConfigSet(configDir.resolve("conf"), name);
+      ccs.uploadConfig(name, configDir.resolve("conf"));
     } catch (SolrBackend.AlreadyExistsException e) {
       throw e;
     } catch (Exception e) {
@@ -1006,13 +996,6 @@ public class MiniSolrCloudCluster implements SolrBackend {
   public void createCollection(CreateCollectionRequestBody body)
       throws SolrBackend.AlreadyExistsException, SolrException {
     try {
-      CollectionAdminResponse listResponse =
-          new CollectionAdminRequest.List().process(getAdminClient());
-      @SuppressWarnings("unchecked")
-      List<String> existing = (List<String>) listResponse.getResponse().get("collections");
-      if (existing != null && existing.contains(body.name)) {
-        throw new SolrBackend.AlreadyExistsException(body.name);
-      }
       CollectionAdminRequest.Create create =
           CollectionAdminRequest.createCollection(
               body.name,
@@ -1026,7 +1009,10 @@ public class MiniSolrCloudCluster implements SolrBackend {
       int shards = body.numShards != null ? body.numShards : 1;
       int replicas = body.replicationFactor != null ? body.replicationFactor : 1;
       waitForActiveCollection(body.name, 15, TimeUnit.SECONDS, shards, shards * replicas);
-    } catch (SolrBackend.AlreadyExistsException e) {
+    } catch (SolrException e) {
+      if (e.getMessage() != null && e.getMessage().contains("already exists")) {
+        throw new SolrBackend.AlreadyExistsException(body.name);
+      }
       throw e;
     } catch (Exception e) {
       throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);
@@ -1249,6 +1235,13 @@ public class MiniSolrCloudCluster implements SolrBackend {
         ClusterProperties props = new ClusterProperties(cluster.getZkClient());
         for (Map.Entry<String, Object> entry : clusterProperties.entrySet()) {
           props.setClusterProperty(entry.getKey(), entry.getValue());
+        }
+      }
+      if (!formatZkServer) {
+        // When reusing an existing ZK, wait for any pre-existing collections to become active
+        for (String collectionName :
+            cluster.getZkStateReader().getClusterState().getCollectionNames()) {
+          cluster.waitForActiveCollection(collectionName, 30, TimeUnit.SECONDS);
         }
       }
       return cluster;
