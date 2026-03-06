@@ -98,9 +98,7 @@ public class RemoteSolrBackend implements SolrBackend {
       }
       create.process(adminClient);
     } catch (SolrException e) {
-      if (e.getMessage() != null && e.getMessage().contains("already exists")) {
-        throw new SolrBackend.AlreadyExistsException(body.name);
-      }
+      AlreadyExistsException.rethrowIfAlreadyExists(e, body.name);
       throw e;
     } catch (Exception e) {
       throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);

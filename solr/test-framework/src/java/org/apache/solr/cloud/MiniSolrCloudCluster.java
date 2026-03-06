@@ -1010,9 +1010,7 @@ public class MiniSolrCloudCluster implements SolrBackend {
       int replicas = body.replicationFactor != null ? body.replicationFactor : 1;
       waitForActiveCollection(body.name, 15, TimeUnit.SECONDS, shards, shards * replicas);
     } catch (SolrException e) {
-      if (e.getMessage() != null && e.getMessage().contains("already exists")) {
-        throw new SolrBackend.AlreadyExistsException(body.name);
-      }
+      AlreadyExistsException.rethrowIfAlreadyExists(e, body.name);
       throw e;
     } catch (Exception e) {
       throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);

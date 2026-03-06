@@ -942,9 +942,7 @@ public class JettySolrRunner implements SolrBackend {
         throw new SolrBackend.AlreadyExistsException(name);
       }
       ccs.uploadConfig(name, configDir.resolve("conf"));
-    } catch (SolrBackend.AlreadyExistsException e) {
-      throw e;
-    } catch (Exception e) {
+    } catch (IOException e) {
       throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);
     }
   }

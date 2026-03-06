@@ -90,6 +90,19 @@ public interface SolrBackend extends AutoCloseable {
     public AlreadyExistsException(String name) {
       super(name + " already exists");
     }
+
+    /**
+     * Checks whether {@code e} indicates a resource already exists (HTTP 400 + "already exists" in
+     * the message) and, if so, throws {@link AlreadyExistsException}. Otherwise returns normally so
+     * the caller can re-throw {@code e}.
+     */
+    public static void rethrowIfAlreadyExists(SolrException e, String name)
+        throws AlreadyExistsException {
+      if (e.code() == SolrException.ErrorCode.BAD_REQUEST.code
+          && e.getMessage().contains("already exists")) {
+        throw new AlreadyExistsException(name);
+      }
+    }
   }
 
   /**
