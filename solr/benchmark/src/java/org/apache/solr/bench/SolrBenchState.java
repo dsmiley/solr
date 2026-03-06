@@ -110,8 +110,8 @@ public class SolrBenchState {
       this.collection = collectionSysProp;
     } else {
       String fqBenchmark = benchmarkParams.getBenchmark();
-      String fqClass = fqBenchmark.substring(0, fqBenchmark.lastIndexOf('.'));
-      this.collection = fqClass.substring(fqClass.lastIndexOf('.') + 1);
+      // Extract simple class name from "pkg.ClassName.methodName", or use as-is if no dots
+      this.collection = fqBenchmark.replaceFirst("^(?:.*\\.)?([^.]+)\\.[^.]+$", "$1");
     }
   }
 
@@ -136,21 +136,26 @@ public class SolrBenchState {
    *
    * <p>Called explicitly by each benchmark's own {@code @Setup(Level.Trial)} method.
    */
-  public void start(int defaultNodeCount, int defaultNumShards, int defaultNumReplicas)
+  public void start(int defaultNodeCount, int defaultNumShards, int defaultReplicationFactor)
       throws Exception {
-    start(defaultNodeCount, defaultNumShards, defaultNumReplicas, SolrBenchBackendType.MINICLUSTER);
+    start(
+        defaultNodeCount,
+        defaultNumShards,
+        defaultReplicationFactor,
+        SolrBenchBackendType.MINICLUSTER);
   }
 
   public void start(
       int defaultNodeCount,
       int defaultNumShards,
-      int defaultRf,
+      int defaultReplicationFactor,
       SolrBenchBackendType defaultBackend)
       throws Exception {
 
     int nodeCount = Integer.getInteger("solr.bench.nodeCount", defaultNodeCount);
     numShards = Integer.getInteger("solr.bench.numShards", defaultNumShards);
-    replicationFactor = Integer.getInteger("solr.bench.replicationFactor", defaultRf);
+    replicationFactor =
+        Integer.getInteger("solr.bench.replicationFactor", defaultReplicationFactor);
 
     String backendProp = System.getProperty("solr.bench.backend");
     SolrBenchBackendType backendType =

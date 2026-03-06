@@ -25,13 +25,14 @@ import static org.apache.solr.bench.generators.SourceDSL.integers;
 import static org.apache.solr.bench.generators.SourceDSL.longs;
 import static org.apache.solr.bench.generators.SourceDSL.strings;
 
+import com.carrotsearch.randomizedtesting.annotations.ParametersFactory;
 import com.carrotsearch.randomizedtesting.annotations.ThreadLeakLingering;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.concurrent.TimeUnit;
 import org.apache.solr.SolrTestCaseJ4;
 import org.apache.solr.client.solrj.request.QueryRequest;
 import org.apache.solr.client.solrj.response.QueryResponse;
-import org.apache.solr.common.params.ModifiableSolrParams;
 import org.junit.After;
 import org.junit.Test;
 import org.openjdk.jmh.annotations.Mode;
@@ -42,21 +43,32 @@ import org.openjdk.jmh.runner.WorkloadParams;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @ThreadLeakLingering(linger = 10)
-public class MiniClusterBenchStateTest extends SolrTestCaseJ4 {
-  private MiniClusterState.MiniClusterBenchState miniBenchState;
+public class SolrBenchStateTest extends SolrTestCaseJ4 {
+  private SolrBenchState solrBenchState;
   private BaseBenchState baseBenchState;
   private BenchmarkParams benchParams;
+  private final SolrBenchBackendType backendType;
+
+  public SolrBenchStateTest(SolrBenchBackendType backendType) {
+    this.backendType = backendType;
+  }
+
+  @ParametersFactory
+  public static Iterable<Object[]> parameters() {
+    return Arrays.asList(
+        new Object[][] {{SolrBenchBackendType.MINICLUSTER}, {SolrBenchBackendType.EMBEDDED}});
+  }
 
   @Test
-  public void testMiniClusterState() throws Exception {
+  public void test() throws Exception {
 
     System.setProperty("workBaseDir", createTempDir("work").toString());
     System.setProperty("random.counts", "true");
 
-    miniBenchState = new MiniClusterState.MiniClusterBenchState();
+    solrBenchState = new SolrBenchState();
     benchParams =
         new BenchmarkParams(
-            "benchmark",
+            "org.apache.solr.bench.SolrBenchStateTest.test",
             "generatedTarget",
             true,
             1,
@@ -79,14 +91,19 @@ public class MiniClusterBenchStateTest extends SolrTestCaseJ4 {
             TimeValue.seconds(10));
     baseBenchState = new BaseBenchState();
     baseBenchState.doSetup(benchParams);
-    miniBenchState.doSetup(benchParams, baseBenchState);
+    solrBenchState.doSetup(benchParams, baseBenchState);
+
+    // Verify that the collection name was derived correctly from the benchmark name
+    assertEquals("SolrBenchStateTest", solrBenchState.getCollection());
 
     int nodeCount = 3;
-    miniBenchState.startMiniCluster(nodeCount);
-    String collection = "collection1";
     int numShards = 1;
     int numReplicas = 1;
-    miniBenchState.createCollection(collection, numShards, numReplicas);
+    solrBenchState.start(nodeCount, numShards, numReplicas, backendType);
+
+    String collection = "collection1";
+    solrBenchState.setCollection(collection);
+    solrBenchState.createCollection("cloud-minimal", java.util.Map.of());
 
     Docs docs =
         docs()
@@ -110,13 +127,13 @@ public class MiniClusterBenchStateTest extends SolrTestCaseJ4 {
     int numDocs = 50;
     docs.preGenerate(numDocs);
 
-    miniBenchState.index(collection, docs, numDocs);
+    solrBenchState.index(docs, numDocs);
 
-    miniBenchState.forceMerge(collection, 15);
+    solrBenchState.forceMerge(15);
 
-    ModifiableSolrParams params = MiniClusterState.params("q", "*:*");
+    var params = params("q", "*:*");
     QueryRequest queryRequest = new QueryRequest(params);
-    QueryResponse result = queryRequest.process(miniBenchState.client, collection);
+    QueryResponse result = queryRequest.process(solrBenchState.getClient());
 
     BaseBenchState.log("match all query result=" + result);
 
@@ -125,9 +142,11 @@ public class MiniClusterBenchStateTest extends SolrTestCaseJ4 {
 
   @After
   public void after() throws Exception {
-    BaseBenchState.doTearDown(benchParams);
-
-    miniBenchState.tearDown(benchParams);
-    miniBenchState.shutdownMiniCluster(benchParams, baseBenchState);
+    if (solrBenchState != null) {
+      solrBenchState.shutdown(benchParams, baseBenchState);
+    }
+    if (baseBenchState != null) {
+      BaseBenchState.doTearDown(benchParams);
+    }
   }
 }
