@@ -1659,7 +1659,7 @@ public abstract class CloudSolrClient extends SolrClient {
       return Collections.emptyList();
     }
     List<String> liveNodesList = new ArrayList<>(liveNodes);
-    Collections.shuffle(liveNodesList, rand);
+    Collections.shuffle(liveNodesList, rand); // shuffle for load distribution across live nodes
     String joinedCollections = StrUtils.join(inputCollections, ',');
     return liveNodesList.stream()
         .map(
