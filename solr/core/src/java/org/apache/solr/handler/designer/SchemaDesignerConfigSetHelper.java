@@ -61,7 +61,7 @@ import org.apache.lucene.util.IOSupplier;
 import org.apache.solr.client.solrj.SolrRequest;
 import org.apache.solr.client.solrj.SolrResponse;
 import org.apache.solr.client.solrj.SolrServerException;
-import org.apache.solr.client.solrj.impl.CloudSolrClient;
+import org.apache.solr.client.solrj.impl.HttpSolrClientBase;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest;
 import org.apache.solr.client.solrj.request.GenericSolrRequest;
 import org.apache.solr.client.solrj.request.schema.FieldTypeDefinition;
@@ -140,7 +140,8 @@ class SchemaDesignerConfigSetHelper implements SchemaDesignerConstants {
     request.withContent(fieldText.getBytes(StandardCharsets.UTF_8), "text/plain");
     request.setResponseParser(new JsonMapResponseParser());
     try {
-      var resp = request.process(cloudClient(), mutableId).getResponse();
+      var resp =
+          request.processWithBaseUrl(solrClient(), getBaseUrl(mutableId), mutableId).getResponse();
       return (Map<String, Object>) resp.get("analysis");
     } catch (SolrServerException e) {
       throw new SolrException(ErrorCode.SERVER_ERROR, e);
@@ -202,7 +203,8 @@ class SchemaDesignerConfigSetHelper implements SchemaDesignerConstants {
     // Using the SchemaAPI vs. working on the schema directly because SchemaField.create methods are
     // package protected
     log.info("Sending {} request for configSet {}: {}", action, mutableId, addJson);
-    SchemaResponse.UpdateResponse schemaResponse = addAction.process(cloudClient(), mutableId);
+    SchemaResponse.UpdateResponse schemaResponse =
+        addAction.processWithBaseUrl(solrClient(), getBaseUrl(mutableId), mutableId);
     Exception exc = schemaResponse.getException();
     if (exc instanceof SolrException) {
       throw (SolrException) exc;
@@ -217,7 +219,8 @@ class SchemaDesignerConfigSetHelper implements SchemaDesignerConstants {
       throws IOException, SolrServerException {
     if (delete) {
       log.debug("Deleting and re-creating existing collection {} after schema update", mutableId);
-      CollectionAdminRequest.deleteCollection(mutableId).process(cloudClient());
+      CollectionAdminRequest.deleteCollection(mutableId)
+          .processWithBaseUrl(solrClient(), getBaseUrl(mutableId), null);
       try {
         zkStateReader().waitForState(mutableId, 30, TimeUnit.SECONDS, Objects::isNull);
       } catch (InterruptedException | TimeoutException e) {
@@ -228,7 +231,8 @@ class SchemaDesignerConfigSetHelper implements SchemaDesignerConstants {
       createCollection(mutableId, mutableId);
       log.debug("Deleted and re-created existing collection: {}", mutableId);
     } else {
-      CollectionAdminRequest.reloadCollection(mutableId).process(cloudClient());
+      CollectionAdminRequest.reloadCollection(mutableId)
+          .processWithBaseUrl(solrClient(), getBaseUrl(mutableId), null);
       log.debug("Reloaded existing collection: {}", mutableId);
     }
   }
@@ -657,7 +661,7 @@ class SchemaDesignerConfigSetHelper implements SchemaDesignerConstants {
     RTimer timer = new RTimer();
     SolrResponse rsp =
         CollectionAdminRequest.createCollection(collection, configSet, numShards, numReplicas)
-            .process(cloudClient());
+            .processWithBaseUrl(solrClient(), getBaseUrl(null), null);
     try {
       CollectionsHandler.waitForActiveCollection(collection, cc, rsp);
     } catch (KeeperException | InterruptedException e) {
@@ -670,8 +674,8 @@ class SchemaDesignerConfigSetHelper implements SchemaDesignerConstants {
         "Took {} ms to create new collection {} with configSet {}", tookMs, collection, configSet);
   }
 
-  protected CloudSolrClient cloudClient() {
-    return cc.getZkController().getSolrClient();
+  protected HttpSolrClientBase solrClient() {
+    return cc.getDefaultHttpSolrClient();
   }
 
   protected ZkStateReader zkStateReader() {
@@ -693,7 +697,8 @@ class SchemaDesignerConfigSetHelper implements SchemaDesignerConstants {
                 .collect(Collectors.toList());
         SchemaRequest.DeleteCopyField delAction =
             new SchemaRequest.DeleteCopyField(fieldName, dests);
-        SchemaResponse.UpdateResponse schemaResponse = delAction.process(cloudClient(), mutableId);
+        SchemaResponse.UpdateResponse schemaResponse =
+            delAction.processWithBaseUrl(solrClient(), getBaseUrl(mutableId), mutableId);
         if (schemaResponse.getStatus() != 0) {
           throw new SolrException(
               SolrException.ErrorCode.SERVER_ERROR, schemaResponse.getException());
@@ -736,7 +741,8 @@ class SchemaDesignerConfigSetHelper implements SchemaDesignerConstants {
       if (!add.isEmpty()) {
         SchemaRequest.AddCopyField addAction =
             new SchemaRequest.AddCopyField(fieldName, new ArrayList<>(add));
-        SchemaResponse.UpdateResponse schemaResponse = addAction.process(cloudClient(), mutableId);
+        SchemaResponse.UpdateResponse schemaResponse =
+            addAction.processWithBaseUrl(solrClient(), getBaseUrl(mutableId), mutableId);
         if (schemaResponse.getStatus() != 0) {
           throw new SolrException(
               SolrException.ErrorCode.SERVER_ERROR, schemaResponse.getException());
@@ -751,7 +757,8 @@ class SchemaDesignerConfigSetHelper implements SchemaDesignerConstants {
       if (!del.isEmpty()) {
         SchemaRequest.DeleteCopyField delAction =
             new SchemaRequest.DeleteCopyField(fieldName, new ArrayList<>(del));
-        SchemaResponse.UpdateResponse schemaResponse = delAction.process(cloudClient(), mutableId);
+        SchemaResponse.UpdateResponse schemaResponse =
+            delAction.processWithBaseUrl(solrClient(), getBaseUrl(mutableId), mutableId);
         if (schemaResponse.getStatus() != 0) {
           throw new SolrException(
               SolrException.ErrorCode.SERVER_ERROR, schemaResponse.getException());
