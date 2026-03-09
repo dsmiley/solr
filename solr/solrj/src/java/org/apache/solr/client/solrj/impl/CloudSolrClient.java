@@ -1169,8 +1169,12 @@ public abstract class CloudSolrClient extends SolrClient {
         // track the version of state we're using on the client side using the _stateVer_ param
         DocCollection coll = getDocCollection(requestedCollection, null);
         if (coll == null) {
-          throw new SolrException(
-              SolrException.ErrorCode.BAD_REQUEST, "Collection not found: " + requestedCollection);
+          // Our local cluster state may be stale; skip _stateVer_ tracking for this collection
+          // and let the request proceed to a live node instead of failing locally.
+          log.warn(
+              "Collection '{}' not found in local cluster state (state may be stale); skipping state version tracking",
+              requestedCollection);
+          continue;
         }
         int collVer = coll.getZNodeVersion();
         if (requestedCollections == null)
@@ -1502,67 +1506,75 @@ public abstract class CloudSolrClient extends SolrClient {
       // of slices.
       Map<String, Slice> slices = new HashMap<>();
       String shardKeys = reqParams.get(ShardParams._ROUTE_);
+      boolean hasUnknownCollection = false;
       for (String collectionName : collectionNames) {
         DocCollection col = getDocCollection(collectionName, null);
         if (col == null) {
-          throw new SolrException(
-              SolrException.ErrorCode.BAD_REQUEST, "Collection not found: " + collectionName);
+          hasUnknownCollection = true;
+          break;
         }
         Collection<Slice> routeSlices = col.getRouter().getSearchSlices(shardKeys, reqParams, col);
         ClientUtils.addSlices(slices, collectionName, routeSlices, true);
       }
 
-      // Gather URLs, grouped by leader or replica
-      List<Replica> sortedReplicas = new ArrayList<>();
-      List<Replica> replicas = new ArrayList<>();
-      for (Slice slice : slices.values()) {
-        Replica leader = slice.getLeader();
-        for (Replica replica : slice.getReplicas()) {
-          String node = replica.getNodeName();
-          if (!liveNodes.contains(node) // Must be a live node to continue
-              || replica.getState()
-                  != Replica.State.ACTIVE) { // Must be an ACTIVE replica to continue
-            continue;
-          }
-          if (sendToLeaders && replica.equals(leader)) {
-            sortedReplicas.add(replica); // put leaders here eagerly (if sendToLeader mode)
-          } else {
-            replicas.add(replica); // replicas here
+      if (hasUnknownCollection) {
+        // Our local cluster state may be stale; route to an arbitrary live node and let the server
+        // handle the request rather than failing locally.
+        requestEndpoints.addAll(
+            getEndpointsForUnknownCollections(inputCollections, urlScheme, liveNodes));
+      } else {
+        // Gather URLs, grouped by leader or replica
+        List<Replica> sortedReplicas = new ArrayList<>();
+        List<Replica> replicas = new ArrayList<>();
+        for (Slice slice : slices.values()) {
+          Replica leader = slice.getLeader();
+          for (Replica replica : slice.getReplicas()) {
+            String node = replica.getNodeName();
+            if (!liveNodes.contains(node) // Must be a live node to continue
+                || replica.getState()
+                    != Replica.State.ACTIVE) { // Must be an ACTIVE replica to continue
+              continue;
+            }
+            if (sendToLeaders && replica.equals(leader)) {
+              sortedReplicas.add(replica); // put leaders here eagerly (if sendToLeader mode)
+            } else {
+              replicas.add(replica); // replicas here
+            }
           }
         }
-      }
 
-      // Sort the leader replicas, if any, according to the request preferences    (none if
-      // !sendToLeaders)
-      replicaListTransformer.transform(sortedReplicas);
+        // Sort the leader replicas, if any, according to the request preferences    (none if
+        // !sendToLeaders)
+        replicaListTransformer.transform(sortedReplicas);
 
-      // Sort the replicas, if any, according to the request preferences and append to our list
-      replicaListTransformer.transform(replicas);
+        // Sort the replicas, if any, according to the request preferences and append to our list
+        replicaListTransformer.transform(replicas);
 
-      sortedReplicas.addAll(replicas);
+        sortedReplicas.addAll(replicas);
 
-      String joinedInputCollections = StrUtils.join(inputCollections, ',');
-      Set<String> seenNodes = new HashSet<>();
-      sortedReplicas.forEach(
-          replica -> {
-            if (seenNodes.add(replica.getNodeName())) {
-              if (inputCollections.size() == 1 && collectionNames.size() == 1) {
-                // If we have a single collection name (and not an alias to multiple collection),
-                // send the query directly to a replica of this collection.
-                requestEndpoints.add(
-                    new LBSolrClient.Endpoint(replica.getBaseUrl(), replica.getCoreName()));
-              } else {
-                requestEndpoints.add(
-                    new LBSolrClient.Endpoint(replica.getBaseUrl(), joinedInputCollections));
+        String joinedInputCollections = StrUtils.join(inputCollections, ',');
+        Set<String> seenNodes = new HashSet<>();
+        sortedReplicas.forEach(
+            replica -> {
+              if (seenNodes.add(replica.getNodeName())) {
+                if (inputCollections.size() == 1 && collectionNames.size() == 1) {
+                  // If we have a single collection name (and not an alias to multiple collection),
+                  // send the query directly to a replica of this collection.
+                  requestEndpoints.add(
+                      new LBSolrClient.Endpoint(replica.getBaseUrl(), replica.getCoreName()));
+                } else {
+                  requestEndpoints.add(
+                      new LBSolrClient.Endpoint(replica.getBaseUrl(), joinedInputCollections));
+                }
               }
-            }
-          });
+            });
 
-      if (requestEndpoints.isEmpty()) {
-        collectionStateCache.keySet().removeAll(collectionNames);
-        throw new SolrException(
-            SolrException.ErrorCode.INVALID_STATE,
-            "Could not find a healthy node to handle the request.");
+        if (requestEndpoints.isEmpty()) {
+          collectionStateCache.keySet().removeAll(collectionNames);
+          throw new SolrException(
+              SolrException.ErrorCode.INVALID_STATE,
+              "Could not find a healthy node to handle the request.");
+        }
       }
     }
 
@@ -1625,6 +1637,36 @@ public abstract class CloudSolrClient extends SolrClient {
   /** Visible for tests so they can assert the configured refresh parallelism. */
   protected int getStateRefreshParallelism() {
     return stateRefreshParallelism;
+  }
+
+  /**
+   * Called when one or more input collections cannot be found in the local cluster state (which may
+   * be stale). Returns a list of fallback endpoints to try, routing to arbitrary live nodes so that
+   * the server can handle the request (rather than failing locally). Subclasses may override to
+   * customize this behavior.
+   *
+   * @param inputCollections the originally requested collections
+   * @param urlScheme the URL scheme ("http" or "https")
+   * @param liveNodes the current set of live node names
+   * @return a list of fallback endpoints, or empty if there are no live nodes
+   */
+  protected List<LBSolrClient.Endpoint> getEndpointsForUnknownCollections(
+      List<String> inputCollections, String urlScheme, Set<String> liveNodes) {
+    log.warn(
+        "Collection(s) not found in local cluster state (state may be stale); routing to an arbitrary live node: {}",
+        inputCollections);
+    if (liveNodes.isEmpty()) {
+      return Collections.emptyList();
+    }
+    List<String> liveNodesList = new ArrayList<>(liveNodes);
+    Collections.shuffle(liveNodesList, rand);
+    String joinedCollections = StrUtils.join(inputCollections, ',');
+    return liveNodesList.stream()
+        .map(
+            n ->
+                new LBSolrClient.Endpoint(
+                    Utils.getBaseUrlForNodeName(n, urlScheme), joinedCollections))
+        .collect(Collectors.toList());
   }
 
   protected DocCollection getDocCollection(String collection, Integer expectedVersion)

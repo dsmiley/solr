@@ -25,10 +25,12 @@ import org.apache.solr.client.solrj.request.CollectionAdminRequest;
 import org.apache.solr.client.solrj.request.SolrQuery;
 import org.apache.solr.cloud.SolrCloudTestCase;
 import org.apache.solr.common.SolrInputDocument;
+import org.apache.solr.common.cloud.ClusterState;
 import org.apache.solr.common.params.CommonParams;
 import org.apache.solr.common.params.ShardParams;
 import org.apache.solr.common.params.UpdateParams;
 import org.apache.solr.common.util.NamedList;
+import org.apache.solr.util.LogListener;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -129,5 +131,41 @@ public final class CloudSolrClientRoutingTest extends SolrCloudTestCase {
 
     assertEquals(0, numForwardedWithRoute);
     assertEquals(100, numForwardedWithoutRoute);
+  }
+
+  /**
+   * Tests that when the client's local cluster state is stale (it doesn't know about a collection
+   * that exists on the server), the client routes to an arbitrary live node instead of failing
+   * locally with "Collection not found". The server handles the request normally.
+   */
+  @Test
+  public void testRouteToArbitraryNodeWhenCollectionUnknown()
+      throws IOException, SolrServerException {
+    ClusterStateProvider realCsp = cluster.getSolrClient().getClusterStateProvider();
+    // Create a "stale" CSP: knows about live nodes but returns null for all collection state,
+    // simulating a client whose local cluster state view hasn't caught up yet.
+    ClusterStateProvider staleCsp =
+        new DelegatingClusterStateProvider(realCsp) {
+          @Override
+          public ClusterState.CollectionRef getState(String collection) {
+            return null; // simulate stale state: collection is unknown locally
+          }
+
+          @Override
+          public void close() {
+            // do not close the delegate; it is owned by the cluster
+          }
+        };
+
+    try (LogListener warnLog =
+            LogListener.warn(CloudSolrClient.class).substring("routing to an arbitrary live node");
+        CloudSolrClient client = new CloudSolrClient.Builder(staleCsp).build()) {
+      // The query should succeed even though the local cluster state doesn't know about the
+      // collection. The client should route to an arbitrary live node and let the server handle it.
+      var response = client.query("test-collection", new SolrQuery("*:*"));
+      assertNotNull(response);
+      // Verify that the client logged a warning about routing to an unknown collection.
+      assertTrue(warnLog.pollMessage().contains("test-collection"));
+    }
   }
 }
