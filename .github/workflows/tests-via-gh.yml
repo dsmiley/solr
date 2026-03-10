@@ -1,0 +1,26 @@
+name: Solr Tests via GitHub
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Run Solr Tests
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    env:
+      DEVELOCITY_ACCESS_KEY: ${{ secrets.SOLR_DEVELOCITY_ACCESS_KEY }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v5
+
+    - uses: ./.github/actions/prepare-for-build
+
+    - name: Test the Solr Project
+      run: ./gradlew --console=plain test
