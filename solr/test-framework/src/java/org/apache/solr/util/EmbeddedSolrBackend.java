@@ -20,7 +20,6 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
-import java.util.Random;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.embedded.EmbeddedSolrServer;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest;
@@ -84,11 +83,6 @@ public class EmbeddedSolrBackend implements SolrBackend {
   @Override
   public boolean hasCollection(String name) {
     return coreContainer.getCoreDescriptor(name) != null;
-  }
-
-  @Override
-  public String getBaseUrl(Random r) {
-    return null;
   }
 
   @Override

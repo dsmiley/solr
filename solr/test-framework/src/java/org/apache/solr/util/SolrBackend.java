@@ -23,11 +23,14 @@ import java.util.Random;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrRequest;
 import org.apache.solr.client.solrj.SolrServerException;
+import org.apache.solr.client.solrj.impl.CloudSolrClient;
+import org.apache.solr.client.solrj.impl.HttpSolrClientBase;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest;
 import org.apache.solr.client.solrj.request.GenericSolrRequest;
 import org.apache.solr.client.solrj.request.MetricsRequest;
 import org.apache.solr.client.solrj.response.InputStreamResponseParser;
 import org.apache.solr.common.params.SolrParams;
+import org.apache.solr.common.util.URLUtil;
 import org.apache.solr.core.CoreContainer;
 import org.apache.solr.embedded.JettySolrRunner;
 
@@ -48,7 +51,8 @@ public interface SolrBackend extends AutoCloseable {
    * Returns the admin (collection-less) {@link SolrClient} owned by this backend, to be used for
    * tasks that are not the subject of what is being tested, and thus the details of the type or
    * configuration of this client doesn't matter. The caller must NOT close it; it is released when
-   * this backend is {@link #close()}d.
+   * this backend is {@link #close()}d. A {@link CloudSolrClient} should be returned if possible.
+   * nocommit
    */
   SolrClient getAdminClient(); // nocommit or "getNodeClient" or getSolrClient ?
 
@@ -110,7 +114,24 @@ public interface SolrBackend extends AutoCloseable {
    *
    * @return base URL (e.g., "http://localhost:8983/solr"). Null for EmbeddedSolrServer.
    */
-  String getBaseUrl(Random r);
+  default String getBaseUrl(Random r) {
+    // Get live nodes and pick one randomly
+    SolrClient adminClient = getAdminClient();
+    if (adminClient instanceof HttpSolrClientBase httpSolrClient) {
+      return httpSolrClient.getBaseURL();
+    } else if (adminClient instanceof CloudSolrClient cloudClient) {
+      var liveNodes = cloudClient.getClusterStateProvider().getLiveNodes();
+      if (liveNodes.isEmpty()) {
+        return null;
+      }
+      String randomNode =
+          liveNodes.stream().skip(r.nextInt(liveNodes.size())).findFirst().orElseThrow();
+      String urlScheme = cloudClient.getClusterStateProvider().getUrlScheme();
+      return URLUtil.getBaseUrlForNodeName(randomNode, urlScheme);
+    } else {
+      return null;
+    }
+  }
 
   /** Dumps Prometheus-format metrics to {@code out}. No-op is an acceptable implementation. */
   default void dumpMetrics(PrintStream out) {

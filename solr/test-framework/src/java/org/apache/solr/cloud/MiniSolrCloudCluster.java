@@ -999,11 +999,6 @@ public class MiniSolrCloudCluster implements SolrBackend {
   }
 
   @Override
-  public String getBaseUrl(Random r) {
-    return getRandomJetty(r).getBaseUrl().toString();
-  }
-
-  @Override
   public CoreContainer getCoreContainer() {
     return jettys.isEmpty() ? null : jettys.get(0).getCoreContainer();
   }

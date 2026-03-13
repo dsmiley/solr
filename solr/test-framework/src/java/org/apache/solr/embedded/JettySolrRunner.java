@@ -812,11 +812,6 @@ public class JettySolrRunner implements SolrBackend {
     this.proxyPort = proxyPort;
   }
 
-  @Override
-  public String getBaseUrl(Random r) {
-    return getBaseUrl().toString();
-  }
-
   /** Returns a base URL like {@code http://localhost:8983/solr} */
   public URL getBaseUrl() {
     try {
@@ -939,14 +934,22 @@ public class JettySolrRunner implements SolrBackend {
 
   @Override
   public void createCollection(CollectionAdminRequest.Create create) {
-    //noinspection resource
     new EmbeddedSolrBackend(backendAdminClient).createCollection(create);
   }
 
   @Override
   public boolean hasCollection(String name) {
-    //noinspection resource
     return new EmbeddedSolrBackend(backendAdminClient).hasCollection(name);
+  }
+
+  @Override
+  public void reloadCollection(String name) throws SolrServerException, IOException {
+    new EmbeddedSolrBackend(backendAdminClient).reloadCollection(name);
+  }
+
+  @Override
+  public String getBaseUrl(Random r) {
+    return getBaseUrl().toString();
   }
 
   @Override

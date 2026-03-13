@@ -19,30 +19,30 @@ package org.apache.solr.util;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Random;
+import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrServerException;
-import org.apache.solr.client.solrj.jetty.HttpJettySolrClient;
+import org.apache.solr.client.solrj.impl.CloudSolrClient;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest;
 import org.apache.solr.client.solrj.request.ConfigSetAdminRequest;
 import org.apache.solr.common.util.IOUtils;
 import org.apache.solr.core.CoreContainer;
 
 /**
- * {@link SolrBackend} that connects to a pre-existing remote Solr node. The caller supplies the
- * base URL at construction time (e.g. {@code http://host:port/solr}).
+ * {@link SolrBackend} that connects to a pre-existing remote SolrCloud cluster. The caller supplies
+ * the ZooKeeper connection string at construction time (e.g. {@code localhost:9983/solr}).
  *
  * <p>Can be subclassed to add a startup step (e.g. launching a Docker container) before
- * constructing the URL.
+ * constructing the client.
  */
 public class RemoteSolrBackend implements SolrBackend {
 
-  private final HttpJettySolrClient adminClient;
+  private final CloudSolrClient adminClient;
 
   public RemoteSolrBackend(String baseUrl) {
-    this.adminClient = new HttpJettySolrClient.Builder(baseUrl).build();
+    this.adminClient = new CloudSolrClient.Builder(List.of(baseUrl)).build();
   }
 
   @Override
@@ -52,7 +52,8 @@ public class RemoteSolrBackend implements SolrBackend {
 
   @Override
   public SolrClient newClient(String collection) {
-    return new HttpJettySolrClient.Builder(adminClient.getBaseURL())
+    return new CloudSolrClient.Builder(
+            List.of(adminClient.getClusterStateProvider().getQuorumHosts()))
         .withDefaultCollection(collection)
         .build();
   }
@@ -108,11 +109,6 @@ public class RemoteSolrBackend implements SolrBackend {
   @Override
   public boolean hasCollection(String name) throws SolrServerException, IOException {
     return CollectionAdminRequest.listCollections(adminClient).contains(name);
-  }
-
-  @Override
-  public String getBaseUrl(Random r) {
-    return adminClient.getBaseURL();
   }
 
   @Override
