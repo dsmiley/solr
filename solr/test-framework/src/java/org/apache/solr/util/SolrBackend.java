@@ -19,6 +19,7 @@ package org.apache.solr.util;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.file.Path;
+import java.util.Random;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrRequest;
 import org.apache.solr.client.solrj.SolrServerException;
@@ -26,7 +27,6 @@ import org.apache.solr.client.solrj.request.CollectionAdminRequest;
 import org.apache.solr.client.solrj.request.GenericSolrRequest;
 import org.apache.solr.client.solrj.request.MetricsRequest;
 import org.apache.solr.client.solrj.response.InputStreamResponseParser;
-import org.apache.solr.common.SolrException;
 import org.apache.solr.common.params.SolrParams;
 import org.apache.solr.core.CoreContainer;
 import org.apache.solr.embedded.JettySolrRunner;
@@ -42,7 +42,7 @@ public interface SolrBackend extends AutoCloseable {
    * this client and is responsible for closing it. Callers that want a long-lived client should
    * cache it themselves.
    */
-  SolrClient newClient(String collection);
+  SolrClient newClient(String collection); // nocommit or newSolrClient ?
 
   /**
    * Returns the admin (collection-less) {@link SolrClient} owned by this backend, to be used for
@@ -50,79 +50,67 @@ public interface SolrBackend extends AutoCloseable {
    * configuration of this client doesn't matter. The caller must NOT close it; it is released when
    * this backend is {@link #close()}d.
    */
-  SolrClient getAdminClient();
+  SolrClient getAdminClient(); // nocommit or "getNodeClient" or getSolrClient ?
 
   /**
-   * <em>If</em> a configSet by this name doesn't exist, this will upload it. Throws {@link
-   * AlreadyExistsException} if a configSet with that name already exists. Tests/benchmarks that
-   * want to test how this works should not use this to do so.
+   * Upload a configSet, possibly overwriting (creating files, updating files, NOT deleting files).
    *
-   * @param configDir directory that <em>directly</em> contains the configSet files (no conf/).
-   * @param name configSet name to register
+   * @param configDir a path to the config set to upload
+   * @param name the name to give the configSet
    */
-  default void createConfigSet(Path configDir, String name) throws AlreadyExistsException {
-    try {
-      var ccs = getCoreContainer().getConfigSetService();
-      if (ccs.checkConfigExists(name)) {
-        throw new SolrBackend.AlreadyExistsException(name);
-      }
-      ccs.uploadConfig(name, configDir);
-    } catch (SolrBackend.AlreadyExistsException | SolrException e) {
-      throw e;
-    } catch (Exception e) {
-      throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);
-    }
+  default void uploadConfigSet(Path configDir, String name)
+      throws SolrServerException, IOException {
+    getCoreContainer().getConfigSetService().uploadConfig(name, configDir);
+  }
+
+  /**
+   * Checks if a configSet with the given name exists.
+   *
+   * @param name configSet name to check
+   * @return true if the configSet exists, false otherwise
+   */
+  default boolean hasConfigSet(String name) throws SolrServerException, IOException {
+    return getCoreContainer().getConfigSetService().checkConfigExists(name);
   }
 
   /**
    * Creates a collection (or core for single-node backends). Cloud backends honour {@code
    * numShards} and {@code replicationFactor}; single-node backends ({@link JettySolrRunner}, {@link
-   * EmbeddedSolrBackend}) ignore those fields. Tests/benchmarks that want to test how this works
-   * should not use this to do so.
-   *
-   * @throws AlreadyExistsException if the collection/core already exists.
+   * EmbeddedSolrBackend}) ignore those fields. Callers should use {@link #hasCollection(String)}
+   * first if they want to avoid errors when the collection already exists. Tests/benchmarks that
+   * want to test how this works should not use this to do so.
    */
-  void createCollection(CollectionAdminRequest.Create create) throws AlreadyExistsException;
+  void createCollection(CollectionAdminRequest.Create create)
+      throws SolrServerException, IOException;
 
   /**
-   * Thrown by {@link #createCollection} and {@link #createConfigSet} when the named collection or
-   * configSet already exists. Callers can catch this to implement "create if absent" logic.
+   * Checks if a collection or core with the given name exists.
+   *
+   * @param name collection or core name to check
+   * @return true if the collection/core exists, false otherwise
    */
-  class AlreadyExistsException extends RuntimeException {
-    public AlreadyExistsException(String name) {
-      super(name + " already exists");
-    }
+  boolean hasCollection(String name) throws SolrServerException, IOException;
 
-    /**
-     * Checks whether {@code e} indicates a resource already exists (HTTP 400 + "already exists" in
-     * the message) and, if so, throws {@link AlreadyExistsException}. Otherwise returns normally so
-     * the caller can re-throw {@code e}.
-     */
-    public static void rethrowIfAlreadyExists(SolrException e, String name)
-        throws AlreadyExistsException {
-      if (e.code() == SolrException.ErrorCode.BAD_REQUEST.code
-          && e.getMessage().contains("already exists")) {
-        throw new AlreadyExistsException(name);
-      }
-    }
+  /** Reloads a collection or core by this name. The purpose is typically to clear caches. */
+  default void reloadCollection(String name) throws SolrServerException, IOException {
+    getAdminClient().request(CollectionAdminRequest.reloadCollection(name));
   }
 
   /**
    * Provides access to an embedded/in-process {@link org.apache.solr.core.CoreContainer} -- if
-   * available (else null). If there are more than one nodes, then one is returned.
+   * available (else null). If there is more than one node, then one is returned.
    *
    * @return can be null.
    */
   CoreContainer getCoreContainer();
 
-  /** Reloads a collection or core by this name. The purpose is typically to clear caches. */
-  default void reloadCollection(String name) {
-    try {
-      getAdminClient().request(CollectionAdminRequest.reloadCollection(name));
-    } catch (SolrServerException | IOException e) {
-      throw new RuntimeException(e);
-    }
-  }
+  /**
+   * Returns the base URL of a Solr node. For cloud backends with multiple nodes, a live node is
+   * chosen at random. The URL does not include a trailing slash.
+   *
+   * @return base URL (e.g., "http://localhost:8983/solr"). Null for EmbeddedSolrServer.
+   */
+  String getBaseUrl(Random r);
 
   /** Dumps Prometheus-format metrics to {@code out}. No-op is an acceptable implementation. */
   default void dumpMetrics(PrintStream out) {

@@ -19,15 +19,16 @@ package org.apache.solr.util;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
+import java.util.Random;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import org.apache.solr.client.solrj.SolrClient;
+import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.jetty.HttpJettySolrClient;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest;
 import org.apache.solr.client.solrj.request.ConfigSetAdminRequest;
-import org.apache.solr.common.SolrException;
 import org.apache.solr.common.util.IOUtils;
+import org.apache.solr.core.CoreContainer;
 
 /**
  * {@link SolrBackend} that connects to a pre-existing remote Solr node. The caller supplies the
@@ -45,7 +46,7 @@ public class RemoteSolrBackend implements SolrBackend {
   }
 
   @Override
-  public org.apache.solr.core.CoreContainer getCoreContainer() {
+  public CoreContainer getCoreContainer() {
     return null;
   }
 
@@ -62,28 +63,22 @@ public class RemoteSolrBackend implements SolrBackend {
   }
 
   @Override
-  public void createConfigSet(Path configDir, String name)
-      throws SolrException, SolrBackend.AlreadyExistsException {
+  public void uploadConfigSet(Path configDir, String name) throws SolrServerException, IOException {
+    Path tempZip = Files.createTempFile("configset-", ".zip");
     try {
-      List<String> existing = new ConfigSetAdminRequest.List().process(adminClient).getConfigSets();
-      if (existing != null && existing.contains(name)) {
-        throw new SolrBackend.AlreadyExistsException(name);
-      }
-      Path tempZip = Files.createTempFile("configset-", ".zip");
-      try {
-        zipDirectory(configDir, tempZip);
-        new ConfigSetAdminRequest.Upload()
-            .setConfigSetName(name)
-            .setUploadFile(tempZip, "application/zip")
-            .process(adminClient);
-      } finally {
-        Files.deleteIfExists(tempZip);
-      }
-    } catch (AlreadyExistsException | SolrException e) {
-      throw e;
-    } catch (Exception e) {
-      throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);
+      zipDirectory(configDir, tempZip);
+      new ConfigSetAdminRequest.Upload()
+          .setConfigSetName(name)
+          .setUploadFile(tempZip, "application/zip")
+          .process(adminClient);
+    } finally {
+      Files.deleteIfExists(tempZip);
     }
+  }
+
+  @Override
+  public boolean hasConfigSet(String name) throws SolrServerException, IOException {
+    return new ConfigSetAdminRequest.List().process(adminClient).getConfigSets().contains(name);
   }
 
   /** Packages {@code sourceDir} contents into a zip file. */
@@ -106,19 +101,18 @@ public class RemoteSolrBackend implements SolrBackend {
 
   @Override
   public void createCollection(CollectionAdminRequest.Create create)
-      throws SolrBackend.AlreadyExistsException, SolrException {
-    String collectionName = create.getCollectionName();
-    try {
-      List<String> existing = CollectionAdminRequest.listCollections(adminClient);
-      if (existing != null && existing.contains(collectionName)) {
-        throw new SolrBackend.AlreadyExistsException(collectionName);
-      }
-      create.process(adminClient);
-    } catch (AlreadyExistsException | SolrException e) {
-      throw e;
-    } catch (Exception e) {
-      throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);
-    }
+      throws SolrServerException, IOException {
+    create.process(adminClient);
+  }
+
+  @Override
+  public boolean hasCollection(String name) throws SolrServerException, IOException {
+    return CollectionAdminRequest.listCollections(adminClient).contains(name);
+  }
+
+  @Override
+  public String getBaseUrl(Random r) {
+    return adminClient.getBaseURL();
   }
 
   @Override

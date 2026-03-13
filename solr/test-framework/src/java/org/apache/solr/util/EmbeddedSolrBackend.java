@@ -20,6 +20,7 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Random;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.embedded.EmbeddedSolrServer;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest;
@@ -68,12 +69,8 @@ public class EmbeddedSolrBackend implements SolrBackend {
   }
 
   @Override
-  public void createCollection(CollectionAdminRequest.Create create)
-      throws SolrBackend.AlreadyExistsException, SolrException {
+  public void createCollection(CollectionAdminRequest.Create create) {
     String coreName = create.getCollectionName();
-    if (coreContainer.getCoreDescriptor(coreName) != null) {
-      throw new SolrBackend.AlreadyExistsException(coreName);
-    }
     Map<String, String> coreParams = new HashMap<>();
     if (create.getConfigName() != null) {
       coreParams.put("configSet", create.getConfigName());
@@ -82,6 +79,16 @@ public class EmbeddedSolrBackend implements SolrBackend {
       create.getProperties().forEach((k, v) -> coreParams.put(k.toString(), v.toString()));
     }
     coreContainer.create(coreName, coreParams);
+  }
+
+  @Override
+  public boolean hasCollection(String name) {
+    return coreContainer.getCoreDescriptor(name) != null;
+  }
+
+  @Override
+  public String getBaseUrl(Random r) {
+    return null;
   }
 
   @Override

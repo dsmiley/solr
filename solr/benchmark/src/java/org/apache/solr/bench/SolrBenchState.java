@@ -72,6 +72,7 @@ import org.openjdk.jmh.infra.Control;
  * override.
  */
 @State(Scope.Benchmark)
+@SuppressForbidden(reason = "This module does not need to deal with logging context")
 public class SolrBenchState {
 
   private SolrBackend backend;
@@ -236,11 +237,11 @@ public class SolrBenchState {
 
   /** The path to a configSet */
   public void createConfigSet(Path configDir) throws Exception {
-    try {
-      backend.createConfigSet(configDir.resolve("conf"), configDir.getFileName().toString());
-    } catch (SolrBackend.AlreadyExistsException e) {
-      // configSet already registered from a prior run; reuse it
+    String configSetName = configDir.getFileName().toString();
+    if (!backend.hasConfigSet(configSetName)) {
+      backend.uploadConfigSet(configDir.resolve("conf"), configSetName);
     }
+    // configSet already registered from a prior run; reuse it
   }
 
   /**
@@ -251,21 +252,20 @@ public class SolrBenchState {
    */
   public boolean createCollection(String configName, Map<String, String> properties)
       throws Exception {
+    if (backend.hasCollection(collection)) {
+      log("Using EXISTING collection: " + collection);
+      benchmarkClient = backend.newClient(collection);
+      return false;
+    }
     var create =
         CollectionAdminRequest.createCollection(
             collection, configName, numShards, replicationFactor);
     if (!properties.isEmpty()) {
       create.setProperties(properties);
     }
-    try {
-      backend.createCollection(create);
-      benchmarkClient = backend.newClient(collection);
-      return true;
-    } catch (SolrBackend.AlreadyExistsException e) {
-      log("Using EXISTING collection: " + collection);
-      benchmarkClient = backend.newClient(collection);
-      return false;
-    }
+    backend.createCollection(create);
+    benchmarkClient = backend.newClient(collection);
+    return true;
   }
 
   public void reloadCollection() throws Exception {
@@ -316,7 +316,6 @@ public class SolrBenchState {
     dumpCoreInfo();
   }
 
-  @SuppressForbidden(reason = "This module does not need to deal with logging context")
   private void indexParallel(Docs docs, int docCount) throws InterruptedException {
     Meter meter = new Meter();
     ExecutorService executorService =

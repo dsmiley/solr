@@ -57,6 +57,7 @@ import java.util.function.Consumer;
 import org.apache.lucene.tests.util.LuceneTestCase;
 import org.apache.solr.SolrTestCaseJ4;
 import org.apache.solr.client.solrj.SolrClient;
+import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.apache.CloudLegacySolrClient;
 import org.apache.solr.client.solrj.impl.CloudSolrClient;
 import org.apache.solr.client.solrj.jetty.SSLConfig;
@@ -569,12 +570,7 @@ public class MiniSolrCloudCluster implements SolrBackend {
     return jetty;
   }
 
-  /**
-   * Upload a configSet, possibly overwriting (creating files, updating files, NOT deleting files).
-   *
-   * @param configDir a path to the config set to upload
-   * @param configName the name to give the configSet
-   */
+  @Override
   public void uploadConfigSet(Path configDir, String configName) throws IOException {
     try (SolrZkClient zkClient =
         new SolrZkClient.Builder()
@@ -977,19 +973,34 @@ public class MiniSolrCloudCluster implements SolrBackend {
 
   @Override
   public void createCollection(CollectionAdminRequest.Create create)
-      throws SolrBackend.AlreadyExistsException, SolrException {
+      throws SolrServerException, IOException {
     String collectionName = create.getCollectionName();
-    if (getZkStateReader().getClusterState().hasCollection(collectionName)) {
-      throw new SolrBackend.AlreadyExistsException(collectionName);
+    create.process(getAdminClient());
+    int shards = create.getNumShards() != null ? create.getNumShards() : 1;
+    int replicas = create.getReplicationFactor() != null ? create.getReplicationFactor() : 1;
+    waitForActiveCollection(collectionName, 15, TimeUnit.SECONDS, shards, shards * replicas);
+  }
+
+  @Override
+  public boolean hasCollection(String name) {
+    return getZkStateReader().getClusterState().hasCollection(name);
+  }
+
+  @Override
+  public boolean hasConfigSet(String name) throws IOException {
+    try (SolrZkClient zkClient =
+        new SolrZkClient.Builder()
+            .withUrl(zkServer.getZkAddress())
+            .withTimeout(AbstractZkTestCase.TIMEOUT, TimeUnit.MILLISECONDS)
+            .withConnTimeOut(AbstractZkTestCase.TIMEOUT, TimeUnit.MILLISECONDS)
+            .build()) {
+      return new ZkConfigSetService(zkClient).checkConfigExists(name);
     }
-    try {
-      create.process(getAdminClient());
-      int shards = create.getNumShards() != null ? create.getNumShards() : 1;
-      int replicas = create.getReplicationFactor() != null ? create.getReplicationFactor() : 1;
-      waitForActiveCollection(collectionName, 15, TimeUnit.SECONDS, shards, shards * replicas);
-    } catch (Exception e) {
-      throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, e);
-    }
+  }
+
+  @Override
+  public String getBaseUrl(Random r) {
+    return getRandomJetty(r).getBaseUrl().toString();
   }
 
   @Override
