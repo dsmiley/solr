@@ -1,0 +1,5 @@
+title: "PR#22 SolrTestCase now warns (not fails) about unreleased objects tracked by ObjectReleaseTracker when a test fails, so ORT doesn't distract from the real test failure."
+type: other
+authors:
+  - name: copilot-swe-agent[bot]
+

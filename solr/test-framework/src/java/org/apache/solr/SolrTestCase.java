@@ -104,7 +104,13 @@ public class SolrTestCase extends LuceneTestCase {
                 @Override
                 protected void afterAlways(List<Throwable> errors) {
                   if (!errors.isEmpty()) {
-                    ObjectReleaseTracker.tryClose();
+                    // test(s) failed; warn about unreleased objects but don't add another failure
+                    String orr = ObjectReleaseTracker.checkEmpty();
+                    if (orr != null) {
+                      log.warn("ObjectReleaseTracker found objects not properly closed: {}", orr);
+                      ObjectReleaseTracker.tryClose();
+                    }
+                    ObjectReleaseTracker.clear();
                   }
                 }
               });
