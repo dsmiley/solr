@@ -187,6 +187,9 @@ public class JoinQParserPlugin extends QParserPlugin {
         fromQueryParser.setIsFilter(true);
         fromQuery = fromQueryParser.getQuery();
       }
+      if (fromQuery == null) {
+        throw new SyntaxError("join requires a subquery but parsed to nothing. String: " + v);
+      }
 
       final String indexToUse = coreName == null ? fromIndex : coreName;
       return new JoinParams(fromField, indexToUse, fromQuery, fromCoreOpenTime, toField);
