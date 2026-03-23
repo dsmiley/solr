@@ -52,6 +52,7 @@ import org.apache.lucene.search.Query;
 import org.apache.lucene.search.Scorable;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.SortField;
+import org.apache.lucene.search.SortedSetSortField;
 import org.apache.lucene.search.TotalHits;
 import org.apache.lucene.search.grouping.GroupDocs;
 import org.apache.lucene.search.grouping.SearchGroup;
@@ -561,7 +562,14 @@ public class QueryComponent extends SearchComponent {
                 });
             leafComparator.copy(0, doc);
             Object val = comparator.value(0);
-            if (null != ft) val = ft.marshalSortValue(val);
+            if (null != ft) {
+              val = ft.marshalSortValue(val);
+            } else if (val instanceof BytesRef) {
+              // Function-based sorts with no schema field type (e.g. field(mv_trie_field,max))
+              // may produce BytesRef comparator values that can't be serialized without
+              // explicit handling. Encode them as base64 for transport. See SOLR-12457.
+              val = FieldType.marshalBase64SortValue(val);
+            }
             vals[position] = val;
           }
 
@@ -1361,7 +1369,18 @@ public class QueryComponent extends SearchComponent {
 
       final SchemaField schemaField = schemaFields.get(sortFieldNum);
       if (null == schemaField) {
-        unmarshalledSortValsPerField.add(sortField.getField(), sortVals);
+        if (sortField instanceof SortedSetSortField) {
+          // Sort values for SortedSetSortField-based function sorts (e.g. field(mv_trie_field,max))
+          // are BytesRef values that were base64-encoded on the shard for transport. See
+          // SOLR-12457.
+          List<Object> unmarshalledSortVals = new ArrayList<>();
+          for (Object sortVal : sortVals) {
+            unmarshalledSortVals.add(FieldType.unmarshalBase64SortValue(sortVal));
+          }
+          unmarshalledSortValsPerField.add(sortField.getField(), unmarshalledSortVals);
+        } else {
+          unmarshalledSortValsPerField.add(sortField.getField(), sortVals);
+        }
       } else {
         FieldType fieldType = schemaField.getType();
         List<Object> unmarshalledSortVals = new ArrayList<>();

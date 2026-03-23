@@ -1448,7 +1448,7 @@ public abstract class FieldType extends FieldProperties {
   }
 
   /** Marshals a binary field value. */
-  protected static Object marshalBase64SortValue(Object value) {
+  public static Object marshalBase64SortValue(Object value) {
     if (null == value) {
       return null;
     }
@@ -1459,7 +1459,7 @@ public abstract class FieldType extends FieldProperties {
   }
 
   /** Unmarshals a binary field value. */
-  protected static Object unmarshalBase64SortValue(Object value) {
+  public static Object unmarshalBase64SortValue(Object value) {
     if (null == value) {
       return null;
     }
