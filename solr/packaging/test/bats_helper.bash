@@ -55,6 +55,13 @@ save_home_on_failure() {
         local solrhome_failure_dir="${TEST_FAILURE_DIR}/${BATS_SUITE_TEST_NUMBER}-${BATS_TEST_NUMBER}"
         cp -r "${SOLR_HOME}" "${solrhome_failure_dir}"
         >&2 echo "Please find the SOLR_HOME snapshot for failed test #${BATS_TEST_NUMBER} at: ${solrhome_failure_dir}"
+        # Print Solr logs inline so they appear directly in CI output without downloading an artifact
+        local solr_log="${SOLR_LOGS_DIR}/solr.log"
+        if [ -f "${solr_log}" ]; then
+            >&2 echo "=== Solr log (${solr_log}) ==="
+            >&2 cat "${solr_log}"
+            >&2 echo "=== End of Solr log ==="
+        fi
     fi
 }
 

@@ -206,7 +206,8 @@ capture_echo_to_solr() {
 
 @test "verbose echo the Solr response" {
 
-  wait_for 30 1 solr create -c monitors_verbose -d _default
+  run solr create -c monitors_verbose -d _default
+  assert_output --partial "Created collection 'monitors_verbose'"
 
   run solr post --verbose --type application/xml --solr-url http://localhost:${SOLR_PORT} -c monitors_verbose ${SOLR_TIP}/example/exampledocs/monitor.xml
 
