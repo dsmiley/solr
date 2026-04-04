@@ -175,8 +175,29 @@ allprojects {
     isCIBuild = System.getenv().keySet().any {it ==~ /(?i)((JENKINS|HUDSON)(_\w+)?|CI)/}
 
     // Assign different java version for client-side modules 'api' and 'solrj*'
-    var isSolrJ = project.name.matches("^(solrj.*|api)\$")
+    project.ext.isSolrJ = project.name.matches("^(solrj.*|api)\$")
     minJavaVersion = isSolrJ ? rootProject.minJavaVersionSolrJ : rootProject.minJavaVersionDefault
     minJavaTestVersion = rootProject.minJavaVersionDefault
+  }
+
+  // Configure Java toolchain based on module type
+  // SolrJ uses Java 17 language level, but doesn't require Java 17 JDK
+  // (can use Java 21+ with --release 17)
+  plugins.withType(JavaPlugin) {
+    java {
+      if (project.ext.isSolrJ) {
+        // Request Java 17 toolchain, but Gradle will fallback to higher version if needed
+        // The --release flag (already configured) ensures Java 17 bytecode
+        toolchain {
+          var targetV = libs.versions.java.solrj.get() as int
+          var currentV = JavaVersion.current().majorVersion as int
+          languageVersion = JavaLanguageVersion.of(Math.max(targetV, currentV))
+        }
+      } else {
+        toolchain {
+          languageVersion = JavaLanguageVersion.of(libs.versions.java.min.get() as int)
+        }
+      }
+    }
   }
 }
