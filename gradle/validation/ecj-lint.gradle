@@ -38,9 +38,6 @@ allprojects {
       def srcDirs = sourceSet.java.srcDirs.findAll {dir -> dir.exists()}
 
       tasks.create(sourceSet.getTaskName("ecjLint", null), JavaExec, {
-        // Use the project's configured Java toolchain (not the Gradle JVM).
-        javaLauncher = javaToolchains.launcherFor(java.toolchain)
-
         // This dependency is on a configuration; technically it causes
         // all dependencies to be resolved before this task executes
         // (this includes scheduling tasks that compile the

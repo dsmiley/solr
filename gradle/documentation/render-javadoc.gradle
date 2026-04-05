@@ -1,5 +1,4 @@
 import org.gradle.internal.jvm.Jvm
-import org.gradle.jvm.toolchain.JavaToolchainService
 
 /*
  * Licensed to the Apache Software Foundation (ASF) under one or more
@@ -84,15 +83,6 @@ allprojects {
 // (they may be unused but this doesn't do any harm).
 
 allprojects {
-  plugins.withType(JavaPlugin) {
-    def toolchainService = project.extensions.getByType(JavaToolchainService)
-    project.tasks.withType(RenderJavadocTask).configureEach {
-      executable = toolchainService
-          .javadocToolFor(java.toolchain)
-          .map { it.executablePath.asFile.absolutePath }
-    }
-  }
-
   project.tasks.withType(RenderJavadocTask) {
     title = "Solr ${project.version} ${project.name} API"
 

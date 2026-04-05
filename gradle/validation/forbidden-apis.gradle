@@ -58,10 +58,6 @@ allprojects {prj ->
           .collect {id -> "${id.name}-unsafe-${id.version}" as String}
     }
 
-    tasks.withType(CheckForbiddenApis).configureEach {
-      javaLauncher = javaToolchains.launcherFor(java.toolchain)
-    }
-
     // Configure defaults for all sourceSets (main and test)
     forbiddenApis {
       bundledSignatures += [
@@ -143,7 +139,7 @@ allprojects {prj ->
     //
     // This is the simplest workaround possible: just point at all the rule files and indicate
     // them as inputs. This way if a rule is modified, checks will be reapplied.
-    configure([forbiddenApisMain, forbiddenApisTest]) {task ->
+    tasks.matching {it.name in ["forbiddenApisMain", "forbiddenApisTest"]}.all {task ->
       task.inputs.dir(file(resources))
     }
   })
