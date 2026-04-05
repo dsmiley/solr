@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 
+
 import org.apache.tools.ant.util.TeeOutputStream
 
 // This project puts together a "distribution", assembling dependencies from
@@ -23,6 +24,7 @@ import org.apache.tools.ant.util.TeeOutputStream
 plugins {
   id 'base'
   id 'distribution'
+  id 'java-base'
 }
 
 description = 'Solr distribution packaging'
@@ -218,6 +220,11 @@ artifacts {
 tasks.register('runDev', JavaExec) {
   group = 'application'
   description = 'Starts Solr for local experimentation.  Does NOT use the bin/solr script.'
+  javaLauncher =
+      project
+          .extensions
+          .getByType(JavaToolchainService)
+          .launcherFor {languageVersion = JavaLanguageVersion.of(libs.versions.java.min.get() as int)}
   dependsOn 'devSlim'
 
   workingDir = file("$slimDevDir/server")

@@ -58,6 +58,10 @@ allprojects {prj ->
           .collect {id -> "${id.name}-unsafe-${id.version}" as String}
     }
 
+    tasks.withType(CheckForbiddenApis).configureEach {
+      javaLauncher = javaToolchains.launcherFor(java.toolchain)
+    }
+
     // Configure defaults for all sourceSets (main and test)
     forbiddenApis {
       bundledSignatures += [

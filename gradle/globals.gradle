@@ -180,23 +180,12 @@ allprojects {
     minJavaTestVersion = rootProject.minJavaVersionDefault
   }
 
-  // Configure Java toolchain based on module type
-  // SolrJ uses Java 17 language level, but doesn't require Java 17 JDK
-  // (can use Java 21+ with --release 17)
+  // Use Java 21 toolchain for all modules. SolrJ still targets Java 17 bytecode
+  // via --release 17 (configured in javac.gradle), but the compiler JDK is Java 21.
   plugins.withType(JavaPlugin) {
     java {
-      if (project.ext.isSolrJ) {
-        // Request Java 17 toolchain, but Gradle will fallback to higher version if needed
-        // The --release flag (already configured) ensures Java 17 bytecode
-        toolchain {
-          var targetV = libs.versions.java.solrj.get() as int
-          var currentV = JavaVersion.current().majorVersion as int
-          languageVersion = JavaLanguageVersion.of(Math.max(targetV, currentV))
-        }
-      } else {
-        toolchain {
-          languageVersion = JavaLanguageVersion.of(libs.versions.java.min.get() as int)
-        }
+      toolchain {
+        languageVersion = JavaLanguageVersion.of(libs.versions.java.min.get() as int)
       }
     }
   }
