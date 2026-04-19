@@ -46,6 +46,7 @@ import java.util.Properties;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.solr.client.solrj.SolrClient;
@@ -61,11 +62,11 @@ import org.apache.solr.common.util.TimeSource;
 import org.apache.solr.common.util.Utils;
 import org.apache.solr.core.CoreContainer;
 import org.apache.solr.metrics.SolrMetricManager;
+import org.apache.solr.servlet.AuthenticationFilter;
 import org.apache.solr.servlet.CoreContainerProvider;
-import org.apache.solr.servlet.PathExclusionFilter;
 import org.apache.solr.servlet.RateLimitFilter;
 import org.apache.solr.servlet.RequiredSolrRequestFilter;
-import org.apache.solr.servlet.SolrDispatchFilter;
+import org.apache.solr.servlet.SolrServlet;
 import org.apache.solr.servlet.TracingFilter;
 import org.apache.solr.util.EmbeddedSolrBackend;
 import org.apache.solr.util.SocketProxy;
@@ -117,10 +118,10 @@ public class JettySolrRunner implements SolrBackend {
   private Server server;
 
   volatile FilterHolder debugFilter;
-  volatile FilterHolder pathExcludeFilter;
   volatile FilterHolder requiredFilter;
   volatile FilterHolder rateLimitFilter;
-  volatile FilterHolder dispatchFilter;
+  volatile FilterHolder authFilter;
+  volatile ServletHolder solrServlet;
   private FilterHolder tracingFilter;
 
   private int jettyPort = -1;
@@ -132,9 +133,6 @@ public class JettySolrRunner implements SolrBackend {
   private volatile boolean startedBefore = false;
 
   private List<FilterHolder> extraFilters;
-
-  private static final String excludePatterns =
-      "/partials/.+,/libs/.+,/css/.+,/js/.+,/img/.+,/templates/.+";
 
   private int proxyPort = -1;
 
@@ -389,9 +387,8 @@ public class JettySolrRunner implements SolrBackend {
               nodeProperties.setProperty("hostPort", Integer.toString(port));
 
               root.getServletContext()
-                  .setAttribute(SolrDispatchFilter.PROPERTIES_ATTRIBUTE, nodeProperties);
-              root.getServletContext()
-                  .setAttribute(SolrDispatchFilter.SOLRHOME_ATTRIBUTE, solrHome);
+                  .setAttribute(CoreContainerProvider.SOLR_PROPERTIES, nodeProperties);
+              root.getServletContext().setAttribute(CoreContainerProvider.SOLR_SOLR_HOME, solrHome);
 
               SSLConfigurationsFactory.current().init(); // normally happens in jetty-ssl.xml
 
@@ -414,12 +411,6 @@ public class JettySolrRunner implements SolrBackend {
       // TODO: This needs to be driven by a parsing of web.xml eventually
       //  though we still want to avoid classpath scanning.
 
-      // this path excludes filter isn't actually necessary for any tests, but it's being
-      // added for parity with the live application.
-      pathExcludeFilter = root.getServletHandler().newFilterHolder(Source.EMBEDDED);
-      pathExcludeFilter.setHeldClass(PathExclusionFilter.class);
-      pathExcludeFilter.setInitParameter("excludePatterns", excludePatterns);
-
       // required request setup
       requiredFilter = root.getServletHandler().newFilterHolder(Source.EMBEDDED);
       requiredFilter.setHeldClass(RequiredSolrRequestFilter.class);
@@ -428,20 +419,24 @@ public class JettySolrRunner implements SolrBackend {
       rateLimitFilter = root.getServletHandler().newFilterHolder(Source.EMBEDDED);
       rateLimitFilter.setHeldClass(RateLimitFilter.class);
 
-      // Ratelimit Requests
+      // Trace Requests
       tracingFilter = root.getServletHandler().newFilterHolder(Source.EMBEDDED);
       tracingFilter.setHeldClass(TracingFilter.class);
 
-      // This is our main workhorse
-      dispatchFilter = root.getServletHandler().newFilterHolder(Source.EMBEDDED);
-      dispatchFilter.setHeldClass(SolrDispatchFilter.class);
+      // Authenticate Requests
+      authFilter = root.getServletHandler().newFilterHolder(Source.EMBEDDED);
+      authFilter.setHeldClass(AuthenticationFilter.class);
 
-      // Map dispatchFilter in same path as in web.xml
-      root.addFilter(pathExcludeFilter, "/*", EnumSet.of(DispatcherType.REQUEST));
+      // Map filters in same path as in web.xml
       root.addFilter(requiredFilter, "/*", EnumSet.of(DispatcherType.REQUEST));
       root.addFilter(rateLimitFilter, "/*", EnumSet.of(DispatcherType.REQUEST));
       root.addFilter(tracingFilter, "/*", EnumSet.of(DispatcherType.REQUEST));
-      root.addFilter(dispatchFilter, "/*", EnumSet.of(DispatcherType.REQUEST));
+      root.addFilter(authFilter, "/*", EnumSet.of(DispatcherType.REQUEST));
+
+      // This is our main workhorse - now a servlet instead of filter
+      solrServlet = root.getServletHandler().newServletHolder(Source.EMBEDDED);
+      solrServlet.setHeldClass(SolrServlet.class);
+      root.addServlet(solrServlet, "/*");
 
       // Default servlet as a fall-through
       ServletHolder defaultHolder = root.getServletHandler().newServletHolder(Source.EMBEDDED);
@@ -491,29 +486,25 @@ public class JettySolrRunner implements SolrBackend {
   }
 
   /**
-   * @return the {@link SolrDispatchFilter} for this node
-   */
-  public SolrDispatchFilter getSolrDispatchFilter() {
-    return (SolrDispatchFilter) dispatchFilter.getFilter();
-  }
-
-  /**
-   * @return the {@link SolrDispatchFilter} for this node
+   * @return the {@link RateLimitFilter} for this node
    */
   public RateLimitFilter getSolrRateLimitFilter() {
     return (RateLimitFilter) rateLimitFilter.getFilter();
   }
 
-  /**
-   * @return the {@link CoreContainer} for this node
-   */
+  @Override
   public CoreContainer getCoreContainer() {
-    final var solrDispatchFilter = getSolrDispatchFilter();
-    if (solrDispatchFilter == null) {
+    SolrServlet servlet;
+    try {
+      servlet = (SolrServlet) solrServlet.getServlet();
+    } catch (ServletException e1) {
+      throw new RuntimeException(e1);
+    }
+    if (servlet == null) {
       return null;
     }
     try {
-      return solrDispatchFilter.getCores();
+      return servlet.getCores();
     } catch (UnavailableException e) {
       return null;
     }
@@ -527,13 +518,13 @@ public class JettySolrRunner implements SolrBackend {
   }
 
   public boolean isRunning() {
-    return server.isRunning() && dispatchFilter != null && dispatchFilter.isRunning();
+    return server.isRunning() && solrServlet != null && solrServlet.isRunning();
   }
 
   public boolean isStopped() {
-    return (server.isStopped() && dispatchFilter == null)
+    return (server.isStopped() && solrServlet == null)
         || (server.isStopped()
-            && dispatchFilter.isStopped()
+            && solrServlet.isStopped()
             && ((QueuedThreadPool) server.getThreadPool()).isStopped());
   }
 
@@ -581,7 +572,7 @@ public class JettySolrRunner implements SolrBackend {
           server.start();
         }
       }
-      assert dispatchFilter.isRunning();
+      assert solrServlet.isRunning();
 
       if (config.waitForLoadingCoresToFinishMs != null
           && config.waitForLoadingCoresToFinishMs > 0L) {
@@ -681,10 +672,17 @@ public class JettySolrRunner implements SolrBackend {
     Map<String, String> prevContext = MDC.getCopyOfContextMap();
     MDC.clear();
     try {
+      IOUtils.closeQuietly(backendAdminClient);
+      backendAdminClient = null;
+
       QueuedThreadPool qtp = (QueuedThreadPool) server.getThreadPool();
       ReservedThreadExecutor rte = qtp.getBean(ReservedThreadExecutor.class);
 
-      server.stop();
+      try {
+        server.stop();
+      } catch (TimeoutException e) {
+        log.warn("Jetty server graceful stop timed out; proceeding with forceful cleanup", e);
+      }
 
       // stop timeout is 0, so we will interrupt right away
       while (!qtp.isStopped()) {
@@ -741,7 +739,9 @@ public class JettySolrRunner implements SolrBackend {
       for (String registryName : registryNames) {
         var prometheusReader = metricsManager.getPrometheusMetricReader(registryName);
         if (prometheusReader != null) {
-          out.println("Registry: " + registryName);
+          out.println();
+          out.println("# Registry: " + registryName);
+          out.println();
           new PrometheusTextFormatWriter(false).write(out, prometheusReader.collect());
         }
       }
@@ -888,18 +888,11 @@ public class JettySolrRunner implements SolrBackend {
   }
 
   private void waitForLoadingCoresToFinish(long timeoutMs) {
-    if (dispatchFilter != null) {
-      SolrDispatchFilter solrFilter = (SolrDispatchFilter) dispatchFilter.getFilter();
-      CoreContainer cores;
-      try {
-        cores = solrFilter.getCores();
-      } catch (UnavailableException e) {
-        throw new IllegalStateException("The CoreContainer is unavailable!");
-      }
-      cores.waitForLoadingCoresToFinish(timeoutMs);
-    } else {
-      throw new IllegalStateException("The dispatchFilter is not set!");
+    CoreContainer cores = getCoreContainer();
+    if (cores == null) {
+      throw new IllegalStateException("solrServlet/coreContainer is not set/available!");
     }
+    cores.waitForLoadingCoresToFinish(timeoutMs);
   }
 
   static class Delay {
@@ -932,19 +925,28 @@ public class JettySolrRunner implements SolrBackend {
     return backendAdminClient;
   }
 
+  private EmbeddedSolrBackend getEmbeddedSolrBackend() {
+    var container = getCoreContainer();
+    if (container.isZooKeeperAware()) {
+      throw new IllegalStateException(
+          "Don't call SolrBackend methods in SolrCloud on JettySolrRunner");
+    }
+    return new EmbeddedSolrBackend(backendAdminClient);
+  }
+
   @Override
   public void createCollection(CollectionAdminRequest.Create create) {
-    new EmbeddedSolrBackend(backendAdminClient).createCollection(create);
+    getEmbeddedSolrBackend().createCollection(create);
   }
 
   @Override
   public boolean hasCollection(String name) {
-    return new EmbeddedSolrBackend(backendAdminClient).hasCollection(name);
+    return getEmbeddedSolrBackend().hasCollection(name);
   }
 
   @Override
   public void reloadCollection(String name) throws SolrServerException, IOException {
-    new EmbeddedSolrBackend(backendAdminClient).reloadCollection(name);
+    getEmbeddedSolrBackend().reloadCollection(name);
   }
 
   @Override
@@ -959,7 +961,7 @@ public class JettySolrRunner implements SolrBackend {
     try {
       stop();
     } catch (Exception e) {
-      throw new RuntimeException(e);
+      log.error(e.toString(), e); // nowarn
     }
   }
 }

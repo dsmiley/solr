@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import org.apache.solr.bench.Docs;
 import org.apache.solr.bench.SolrBenchState;
+import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.io.SolrClientCache;
 import org.apache.solr.client.solrj.io.Tuple;
@@ -35,6 +36,7 @@ import org.apache.solr.client.solrj.io.stream.TupleStream;
 import org.apache.solr.cloud.MiniSolrCloudCluster;
 import org.apache.solr.common.params.CommonParams;
 import org.apache.solr.common.params.ModifiableSolrParams;
+import org.apache.solr.common.util.IOUtils;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -66,6 +68,7 @@ public class StreamingSearch {
     private String zkHost;
     private ModifiableSolrParams params;
     private StreamContext streamContext;
+    private SolrClient httpSolrClient;
 
     @Setup(Level.Trial)
     public void setup(SolrBenchState solrBenchState) throws Exception {
@@ -83,7 +86,8 @@ public class StreamingSearch {
         solrBenchState.waitForMerges();
       }
 
-      // StreamingSearch requires ZooKeeper access — cast to MiniSolrCloudCluster to get the ZK host
+      // StreamingSearch requires ZooKeeper access -- cast to MiniSolrCloudCluster to get the ZK
+      // host
       MiniSolrCloudCluster cluster = (MiniSolrCloudCluster) solrBenchState.getBackend();
       zkHost = cluster.getZkServer().getZkAddress();
 
@@ -106,6 +110,7 @@ public class StreamingSearch {
     @TearDown(Level.Iteration)
     public void teardownIt() throws IOException {
       streamContext.getSolrClientCache().close();
+      IOUtils.closeQuietly(httpSolrClient);
     }
   }
 
