@@ -32,6 +32,8 @@ import org.junit.runners.model.Statement;
  */
 public class LogLevelTestRule implements TestRule {
 
+  private static final String globalLogLevel = System.getProperty("logLevel");
+
   @Override
   public Statement apply(Statement base, Description description) {
     // loop over the annotations to find LogLevel
@@ -39,26 +41,30 @@ public class LogLevelTestRule implements TestRule {
         description.getAnnotations().stream()
             .filter(a -> a.annotationType().equals(LogLevel.class))
             .findAny();
-    if (annotationOpt.isEmpty()) {
+    final String logLevelValue;
+    if (annotationOpt.isPresent()) {
+      logLevelValue = ((LogLevel) annotationOpt.get()).value();
+    } else if (globalLogLevel != null) {
+      logLevelValue = globalLogLevel;
+    } else {
       return base;
     }
-    final var annotation = (LogLevel) annotationOpt.get();
-    return new LogLevelStatement(base, annotation);
+    return new LogLevelStatement(base, logLevelValue);
   }
 
   static class LogLevelStatement extends Statement {
     private final Statement delegate;
-    private final LogLevel annotation;
+    private final String logLevelValue;
 
-    protected LogLevelStatement(Statement delegate, LogLevel annotation) {
+    protected LogLevelStatement(Statement delegate, String logLevelValue) {
       this.delegate = delegate;
-      this.annotation = annotation;
+      this.logLevelValue = logLevelValue;
     }
 
     @SuppressForbidden(reason = "Using the Level class from log4j2 directly")
     @Override
     public void evaluate() throws Throwable {
-      Map<String, Level> savedLogLevels = LogLevel.Configurer.setLevels(annotation.value());
+      Map<String, Level> savedLogLevels = LogLevel.Configurer.setLevels(logLevelValue);
       try {
         delegate.evaluate();
       } finally {

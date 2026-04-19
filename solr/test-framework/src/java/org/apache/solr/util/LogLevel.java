@@ -37,7 +37,7 @@ import org.apache.solr.common.util.SuppressForbidden;
  * <p>Log levels are set for different classes by passing a configuration string to the annotation,
  * like this: <code>
  *   {@literal @}LogLevel("org.apache.solr=DEBUG;org.apache.solr.core=INFO")
- * </code>
+ * </code> You can omit "=DEBUG" after a logger name as DEBUG is assumed as default.
  *
  * @see LogLevelTestRule
  */
@@ -57,7 +57,14 @@ public @interface LogLevel {
       Map<String, Level> testlevels = new HashMap<>();
       for (String levelSetting : input.split(";")) {
         String[] parts = levelSetting.split("=");
-        testlevels.put(parts[0], parseLevel(parts[1]));
+        if (parts.length == 1) {
+          testlevels.put(parts[0], Level.DEBUG);
+        } else {
+          assert parts.length == 2 : "Wrong LogLevel format; see javadocs: " + input;
+          testlevels.put(parts[0], parseLevel(parts[1]));
+        }
+        assert !parts[0].contains(",") : "Wrong LogLevel format; see javadocs: " + input;
+        assert !parts[0].contains("*") : "Wrong LogLevel format; see javadocs: " + input;
       }
       return testlevels;
     }

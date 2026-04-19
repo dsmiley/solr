@@ -35,7 +35,6 @@ import org.apache.solr.core.SolrCore;
 import org.apache.solr.core.SolrEventListener;
 import org.apache.solr.embedded.JettySolrRunner;
 import org.apache.solr.search.SolrIndexSearcher;
-import org.apache.solr.util.LogLevel;
 import org.apache.solr.util.RefCounted;
 import org.apache.solr.util.TestInjection;
 import org.junit.After;
@@ -46,8 +45,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /** Tests related to SOLR-6086 */
-@LogLevel(
-    "org.apache.solr.cloud.overseer.*=DEBUG,org.apache.solr.cloud.Overseer=DEBUG,org.apache.solr.cloud.ZkController=DEBUG")
 public class TestCloudSearcherWarming extends SolrCloudTestCase {
   public static final AtomicReference<String> coreNodeNameRef = new AtomicReference<>(null),
       coreNameRef = new AtomicReference<>(null);
