@@ -75,7 +75,6 @@ import org.eclipse.jetty.client.Socks4Proxy;
 import org.eclipse.jetty.client.StringRequestContent;
 import org.eclipse.jetty.client.transport.HttpClientTransportOverHTTP;
 import org.eclipse.jetty.http.HttpCookieStore;
-import org.eclipse.jetty.http.HttpField;
 import org.eclipse.jetty.http.HttpFields;
 import org.eclipse.jetty.http.HttpHeader;
 import org.eclipse.jetty.http.HttpMethod;
@@ -301,7 +300,6 @@ public class HttpJettySolrClient extends HttpSolrClientBase {
     httpClient.setFollowRedirects(Boolean.TRUE.equals(builder.getFollowRedirects()));
     httpClient.setMaxRequestsQueuedPerDestination(
         asyncTracker.getMaxRequestsQueuedPerDestination());
-    httpClient.setUserAgentField(new HttpField(HttpHeader.USER_AGENT, USER_AGENT));
     httpClient.setConnectTimeout(builder.getConnectionTimeoutMillis());
     httpClient.setIdleTimeout(-1); // don't enforce an idle timeout at this level
     // note: idle & request timeouts are set per request
@@ -594,19 +592,29 @@ public class HttpJettySolrClient extends HttpSolrClientBase {
         urlExceptionMessage);
   }
 
-  private void setBasicAuthHeader(SolrRequest<?> solrRequest, Request req) {
-    if (solrRequest.getBasicAuthUser() != null && solrRequest.getBasicAuthPassword() != null) {
-      String encoded =
-          basicAuthCredentialsToAuthorizationString(
-              solrRequest.getBasicAuthUser(), solrRequest.getBasicAuthPassword());
-      req.headers(headers -> headers.put("Authorization", encoded));
-    } else if (basicAuthAuthorizationStr != null) {
-      req.headers(headers -> headers.put("Authorization", basicAuthAuthorizationStr));
-    }
-  }
-
   protected void decorateRequest(Request req, SolrRequest<?> solrRequest, boolean isAsync) {
-    req.headers(headers -> headers.remove(HttpHeader.ACCEPT_ENCODING));
+    req.headers(
+        headers -> {
+          headers.put(HttpHeader.USER_AGENT, USER_AGENT);
+          // TODO why?
+          headers.remove(HttpHeader.ACCEPT_ENCODING);
+
+          if (solrRequest.getBasicAuthUser() != null
+              && solrRequest.getBasicAuthPassword() != null) {
+            String encoded =
+                basicAuthCredentialsToAuthorizationString(
+                    solrRequest.getBasicAuthUser(), solrRequest.getBasicAuthPassword());
+            headers.put("Authorization", encoded);
+          } else if (basicAuthAuthorizationStr != null) {
+            headers.put("Authorization", basicAuthAuthorizationStr);
+          }
+
+          Map<String, String> solrReqHeaders = solrRequest.getHeaders();
+          if (solrReqHeaders != null) {
+            solrReqHeaders.forEach(headers::add);
+          }
+        });
+
     req.idleTimeout(idleTimeoutMillis, TimeUnit.MILLISECONDS);
     req.timeout(requestTimeoutMillis, TimeUnit.MILLISECONDS);
 
@@ -614,7 +622,6 @@ public class HttpJettySolrClient extends HttpSolrClientBase {
       req.attribute(REQ_PRINCIPAL_KEY, solrRequest.getUserPrincipal());
     }
 
-    setBasicAuthHeader(solrRequest, req);
     for (HttpListenerFactory factory : listenerFactory) {
       HttpListenerFactory.RequestResponseListener listener = factory.get();
       listener.onQueued(req);
@@ -626,31 +633,15 @@ public class HttpJettySolrClient extends HttpSolrClientBase {
       req.onRequestQueued(asyncTracker.queuedListener);
       req.onComplete(asyncTracker.completeListener);
     }
-
-    Map<String, String> headers = solrRequest.getHeaders();
-    if (headers != null) {
-      req.headers(h -> headers.forEach(h::add));
-    }
   }
 
-  private static class MakeRequestReturnValue {
-    final Request request;
-    final RequestWriter.ContentWriter contentWriter;
-    final OutputStreamRequestContent requestContent;
-
-    MakeRequestReturnValue(
-        Request request,
-        RequestWriter.ContentWriter contentWriter,
-        OutputStreamRequestContent requestContent) {
-      this.request = request;
-      this.contentWriter = contentWriter;
-      this.requestContent = requestContent;
-    }
+  private record MakeRequestReturnValue(
+      Request request,
+      RequestWriter.ContentWriter contentWriter,
+      OutputStreamRequestContent requestContent) {
 
     MakeRequestReturnValue(Request request) {
-      this.request = request;
-      this.contentWriter = null;
-      this.requestContent = null;
+      this(request, null, null);
     }
   }
 
