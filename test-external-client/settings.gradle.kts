@@ -14,23 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.solr.client.solrj.apache;
 
-import java.net.URL;
-import java.util.Arrays;
-import org.apache.solr.util.RandomizeSSL;
-import org.junit.BeforeClass;
+rootProject.name = "test-external-client"
 
-@RandomizeSSL(1.0)
-public class HttpSolrClientSSLAuthConPoolTest extends HttpSolrClientConPoolTest {
-
-  @BeforeClass
-  public static void checkUrls() {
-    URL[] urls =
-        new URL[] {solrTestRule.getJetty().getBaseUrl(), secondJetty.getJetty().getBaseUrl()};
-    for (URL u : urls) {
-      assertEquals("expect https urls ", "https", u.getProtocol());
-    }
-    assertNotEquals("expect different urls " + Arrays.toString(urls), urls[0], urls[1]);
-  }
-}
