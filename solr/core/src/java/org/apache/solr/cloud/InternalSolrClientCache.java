@@ -17,30 +17,58 @@
 
 package org.apache.solr.cloud;
 
+import java.net.MalformedURLException;
+import java.net.URISyntaxException;
+import java.util.concurrent.TimeUnit;
+import org.apache.solr.client.solrj.impl.CloudHttp2SolrClient;
 import org.apache.solr.client.solrj.impl.CloudSolrClient;
 import org.apache.solr.client.solrj.impl.HttpSolrClient;
 import org.apache.solr.client.solrj.io.SolrClientCache;
+import org.apache.solr.client.solrj.jetty.CloudJettySolrClient;
+import org.apache.solr.client.solrj.jetty.HttpJettySolrClient;
 import org.apache.solr.common.SolrException;
 import org.apache.solr.common.util.EnvUtils;
+import org.apache.solr.common.util.URLUtil;
 
-/** A restricted {@link SolrClientCache} that only permits access local solr cluster */
+/**
+ * A restricted {@link SolrClientCache} for internal Solr use. See {@link
+ * #ALLOW_EXTERNAL_CLUSTERS_PROPERTY} to open it up.
+ */
 public class InternalSolrClientCache extends SolrClientCache {
 
-  private static final String ALLOW_EXTERNAL_CLUSTERS_PROPERTY = "solr.cloud.external.enabled";
-
-  public InternalSolrClientCache(
-      HttpSolrClient httpSolrClient, CloudSolrClient.CloudSolrClientConnection solrConnection) {
-    super(httpSolrClient);
-    cloudSolClients.put(solrConnection, newCloudSolrClient(solrConnection, httpSolrClient, true));
+  static {
+    assert INTERNAL_IMPL_CLASS.equals(InternalSolrClientCache.class.getName())
+        : "Update SolrClientCache.INTERNAL_IMPL_CLASS to match the renamed class";
   }
 
-  public InternalSolrClientCache(HttpSolrClient httpSolrClient) {
-    super(httpSolrClient);
+  public static final String ALLOW_EXTERNAL_CLUSTERS_PROPERTY = "solr.cloud.external.enabled";
+
+  private final CloudSolrClient.CloudSolrClientConnection defaultConnection;
+
+  public InternalSolrClientCache(
+      HttpJettySolrClient httpSolrClient,
+      CloudSolrClient.CloudSolrClientConnection solrConnection) {
+    super(); // not passing httpSolrClient down ...
+    this.defaultConnection = solrConnection;
+    // ... create one internal CloudSolrClient that is a bit special.
+    var httpBuilder =
+        new HttpJettySolrClient.Builder()
+            .withIdleTimeout(minSocketTimeout, TimeUnit.MILLISECONDS)
+            .withHttpClient(httpSolrClient);
+    cloudSolClients.put(
+        solrConnection,
+        new CloudJettySolrClient.Builder(solrConnection)
+            .canUseZkACLs(true)
+            .withHttpClientBuilder(httpBuilder)
+            .build());
   }
 
   @Override
   public synchronized CloudSolrClient getCloudSolrClient(
       CloudSolrClient.CloudSolrClientConnection solrConnection) {
+    if (solrConnection == null) {
+      solrConnection = defaultConnection;
+    }
     CloudSolrClient client = cloudSolClients.get(solrConnection);
     if (client != null) {
       return client;
@@ -54,5 +82,30 @@ public class InternalSolrClientCache extends SolrClientCache {
             + solrConnection
             + ". To allow external clusters set -Dsolr.enable-external-clusters=true "
             + "(WARNING: this may enable SSRF attacks)");
+  }
+
+  @Override
+  protected HttpSolrClient.BuilderBase<?, ?> newHttpSolrClientBuilder(String url) {
+    if (url != null) {
+      // override to attempt to use the jetty client inside a matching CloudSolrClient.
+      String baseUrl = URLUtil.isBaseUrl(url) ? url : URLUtil.extractBaseUrl(url);
+      try {
+        String nodeName = URLUtil.getNodeNameForBaseUrl(baseUrl);
+        for (CloudSolrClient cloudSolrClient : cloudSolClients.values()) {
+          if (cloudSolrClient.getClusterStateProvider().getLiveNodes().contains(nodeName)) {
+            final var builder = new HttpJettySolrClient.Builder(baseUrl);
+            if (!URLUtil.isBaseUrl(url)) {
+              builder.withDefaultCollection(URLUtil.extractCoreFromCoreUrl(url));
+            }
+            builder.withHttpClient(
+                (HttpJettySolrClient) ((CloudHttp2SolrClient) cloudSolrClient).getHttpClient());
+            return builder;
+          }
+        }
+      } catch (MalformedURLException | URISyntaxException e) {
+        throw new SolrException(SolrException.ErrorCode.BAD_REQUEST, e);
+      }
+    }
+    return super.newHttpSolrClientBuilder(url);
   }
 }

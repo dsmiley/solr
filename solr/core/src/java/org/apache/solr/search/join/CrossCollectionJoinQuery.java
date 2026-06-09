@@ -39,7 +39,6 @@ import org.apache.lucene.search.Weight;
 import org.apache.lucene.util.BytesRefBuilder;
 import org.apache.lucene.util.FixedBitSet;
 import org.apache.solr.client.solrj.impl.CloudSolrClient;
-import org.apache.solr.client.solrj.io.SolrClientCache;
 import org.apache.solr.client.solrj.io.Tuple;
 import org.apache.solr.client.solrj.io.eq.FieldEqualitor;
 import org.apache.solr.client.solrj.io.stream.CloudSolrStream;
@@ -222,7 +221,7 @@ public class CrossCollectionJoinQuery extends Query implements SolrSearcherRequi
       }
     }
 
-    private TupleStream createCloudSolrStream(SolrClientCache solrClientCache) throws IOException {
+    private TupleStream createCloudSolrStream() throws IOException {
       ZkController zkController = searcher.getCore().getCoreContainer().getZkController();
 
       CloudSolrClient.CloudSolrClientConnection streamingSolrConnection;
@@ -245,22 +244,20 @@ public class CrossCollectionJoinQuery extends Query implements SolrSearcherRequi
       params.set(CommonParams.WT, CommonParams.JAVABIN);
 
       StreamContext streamContext = new StreamContext();
-      streamContext.setSolrClientCache(solrClientCache);
+      streamContext.setSolrClientCache(zkController.getSolrClientCache());
       streamContext.setRequestParams(new ModifiableSolrParams(otherParams));
-      if (zkController != null) {
-        RequestReplicaListTransformerGenerator rltg =
-            new RequestReplicaListTransformerGenerator(
-                zkController
-                    .getZkStateReader()
-                    .getClusterProperties()
-                    .getOrDefault(ZkStateReader.DEFAULT_SHARD_PREFERENCES, "")
-                    .toString(),
-                zkController.getNodeName(),
-                zkController.getBaseUrl(),
-                zkController.getHostName(),
-                zkController.getSysPropsCacher());
-        streamContext.setRequestReplicaListTransformerGenerator(rltg);
-      }
+      RequestReplicaListTransformerGenerator rltg =
+          new RequestReplicaListTransformerGenerator(
+              zkController
+                  .getZkStateReader()
+                  .getClusterProperties()
+                  .getOrDefault(ZkStateReader.DEFAULT_SHARD_PREFERENCES, "")
+                  .toString(),
+              zkController.getNodeName(),
+              zkController.getBaseUrl(),
+              zkController.getHostName(),
+              zkController.getSysPropsCacher());
+      streamContext.setRequestReplicaListTransformerGenerator(rltg);
 
       TupleStream cloudSolrStream =
           new CloudSolrStream(streamingSolrConnection, collection, params);
@@ -305,8 +302,7 @@ public class CrossCollectionJoinQuery extends Query implements SolrSearcherRequi
     private DocSet getDocSet() throws IOException {
       TupleStream solrStream;
       if (solrConnection != null || solrUrl == null) {
-        var solrClientCache = searcher.getCore().getCoreContainer().getSolrClientCache();
-        solrStream = createCloudSolrStream(solrClientCache);
+        solrStream = createCloudSolrStream();
       } else {
         solrStream = createSolrStream();
       }

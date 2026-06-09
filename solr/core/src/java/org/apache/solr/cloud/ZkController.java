@@ -65,6 +65,7 @@ import org.apache.solr.client.solrj.impl.CloudSolrClient;
 import org.apache.solr.client.solrj.impl.SolrClientCloudManager;
 import org.apache.solr.client.solrj.impl.SolrZkClientTimeout;
 import org.apache.solr.client.solrj.impl.ZkClientClusterStateProvider;
+import org.apache.solr.client.solrj.io.SolrClientCache;
 import org.apache.solr.client.solrj.jetty.CloudJettySolrClient;
 import org.apache.solr.client.solrj.jetty.HttpJettySolrClient;
 import org.apache.solr.client.solrj.request.CoreAdminRequest.WaitForState;
@@ -208,6 +209,8 @@ public class ZkController implements Closeable {
   private SolrCloudManager cloudManager;
 
   private CloudSolrClient cloudSolrClient;
+
+  private volatile InternalSolrClientCache internalSolrClientCache;
 
   private final ExecutorService zkConnectionListenerCallbackExecutor =
       ExecutorUtil.newMDCAwareSingleThreadExecutor(
@@ -657,6 +660,19 @@ public class ZkController implements Closeable {
     return getSolrCloudManager().getSolrClient();
   }
 
+  public SolrClientCache getSolrClientCache() {
+    if (internalSolrClientCache == null) {
+      synchronized (this) {
+        if (internalSolrClientCache == null) {
+          var connection = CloudSolrClient.CloudSolrClientConnection.parse(zkServerAddress);
+          internalSolrClientCache =
+              new InternalSolrClientCache(cc.getDefaultHttpSolrClient(), connection);
+        }
+      }
+    }
+    return internalSolrClientCache;
+  }
+
   public int getLeaderVoteWait() {
     return leaderVoteWait;
   }
@@ -856,6 +872,7 @@ public class ZkController implements Closeable {
 
       customThreadPool.execute(() -> IOUtils.closeQuietly(cloudManager));
       customThreadPool.execute(() -> IOUtils.closeQuietly(cloudSolrClient));
+      customThreadPool.execute(() -> IOUtils.closeQuietly(internalSolrClientCache));
 
       try {
         try {

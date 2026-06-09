@@ -69,14 +69,12 @@ import org.apache.solr.api.ClusterPluginsSource;
 import org.apache.solr.api.ContainerPluginsRegistry;
 import org.apache.solr.api.JerseyResource;
 import org.apache.solr.client.solrj.SolrRequest;
-import org.apache.solr.client.solrj.impl.CloudSolrClient;
 import org.apache.solr.client.solrj.impl.HttpSolrClient;
 import org.apache.solr.client.solrj.io.SolrClientCache;
 import org.apache.solr.client.solrj.jetty.HttpJettySolrClient;
 import org.apache.solr.client.solrj.util.SolrIdentifierValidator;
 import org.apache.solr.cloud.CloudDescriptor;
 import org.apache.solr.cloud.ClusterSingleton;
-import org.apache.solr.cloud.InternalSolrClientCache;
 import org.apache.solr.cloud.ZkController;
 import org.apache.solr.cluster.events.ClusterEventProducer;
 import org.apache.solr.cluster.events.impl.ClusterEventProducerFactory;
@@ -285,8 +283,6 @@ public class CoreContainer {
   protected volatile Tracer tracer;
 
   protected MetricsHandler metricsHandler;
-
-  private volatile SolrClientCache solrClientCache;
 
   private volatile Map<String, SolrCache<?, ?>> caches;
 
@@ -714,8 +710,8 @@ public class CoreContainer {
    */
   @Deprecated
   public SolrClientCache getSolrClientCache() {
-    // TODO put in the objectCache instead
-    return solrClientCache;
+    // TODO put in the objectCache instead?
+    return isZooKeeperAware() ? getZkController().getSolrClientCache() : null;
   }
 
   public ObjectCache getObjectCache() {
@@ -828,9 +824,6 @@ public class CoreContainer {
 
     zkSys.initZooKeeper(this, cfg.getCloudConfig());
     if (isZooKeeperAware()) {
-      var connection =
-          CloudSolrClient.CloudSolrClientConnection.parse(getZkController().getZkServerAddress());
-      solrClientCache = new InternalSolrClientCache(solrClientProvider.getSolrClient(), connection);
       // initialize ZkClient metrics
       zkSys
           .getZkMetricsProducer()
@@ -1299,9 +1292,6 @@ public class CoreContainer {
         }
       } catch (Exception e) {
         log.warn("Error shutting down CoreAdminHandler. Continuing to close CoreContainer.", e);
-      }
-      if (solrClientCache != null) {
-        solrClientCache.close();
       }
       if (containerPluginsRegistry != null) {
         IOUtils.closeQuietly(containerPluginsRegistry);
