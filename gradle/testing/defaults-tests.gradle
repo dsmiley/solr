@@ -117,7 +117,7 @@ allprojects {
       jvmArgs Commandline.translateCommandline(resolvedTestOption("tests.jvmargs"))
 
       // Enable the vector incubator module on supported Java versions:
-      if (rootProject.vectorIncubatorJavaVersions.contains(rootProject.runtimeJavaVersion)) {
+      if (rootProject.vectorIncubatorJavaVersions.contains(JavaVersion.toVersion(javaLauncher.get().metadata.languageVersion.asInt()))) {
         jvmArgs '--add-modules', 'jdk.incubator.vector'
       }
 
