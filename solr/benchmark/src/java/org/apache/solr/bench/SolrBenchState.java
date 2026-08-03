@@ -20,7 +20,6 @@ import static org.apache.commons.io.file.PathUtils.deleteDirectory;
 import static org.apache.commons.io.file.PathUtils.sizeOfDirectory;
 import static org.apache.solr.bench.BaseBenchState.log;
 
-import com.codahale.metrics.Meter;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.net.URL;
@@ -37,6 +36,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import org.apache.solr.SolrBackend;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest;
@@ -51,9 +52,8 @@ import org.apache.solr.common.util.NamedList;
 import org.apache.solr.common.util.ObjectReleaseTracker;
 import org.apache.solr.common.util.SolrNamedThreadFactory;
 import org.apache.solr.common.util.SuppressForbidden;
-import org.apache.solr.util.EmbeddedSolrBackend;
+import org.apache.solr.embedded.EmbeddedSolrBackend;
 import org.apache.solr.util.RemoteSolrBackend;
-import org.apache.solr.util.SolrBackend;
 import org.apache.solr.util.SolrTestNonSecureRandomProvider;
 import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Scope;
@@ -254,7 +254,7 @@ public class SolrBenchState {
       throws Exception {
     if (backend.hasCollection(collection)) {
       log("Using EXISTING collection: " + collection);
-      benchmarkClient = backend.newClient(collection);
+      benchmarkClient = backend.newSolrClient(collection);
       return false;
     }
     var create =
@@ -264,7 +264,7 @@ public class SolrBenchState {
       create.setProperties(properties);
     }
     backend.createCollection(create);
-    benchmarkClient = backend.newClient(collection);
+    benchmarkClient = backend.newSolrClient(collection);
     return true;
   }
 
@@ -317,7 +317,8 @@ public class SolrBenchState {
   }
 
   private void indexParallel(Docs docs, int docCount) throws InterruptedException {
-    Meter meter = new Meter();
+    AtomicLong meterCount = new AtomicLong();
+    long meterStartNanos = System.nanoTime();
     ExecutorService executorService =
         Executors.newFixedThreadPool(
             Runtime.getRuntime().availableProcessors(),
@@ -327,10 +328,11 @@ public class SolrBenchState {
             new SolrNamedThreadFactory("SolrJMH Indexer Progress"));
     scheduledExecutor.scheduleAtFixedRate(
         () -> {
-          if (meter.getCount() == docCount) {
+          long count = meterCount.get();
+          if (count == docCount) {
             scheduledExecutor.shutdown();
           } else {
-            log(meter.getCount() + " docs at " + meter.getMeanRate() + " doc/s");
+            logIndexingRate(count, meterStartNanos);
           }
         },
         10,
@@ -346,7 +348,7 @@ public class SolrBenchState {
               UpdateRequest updateRequest = new UpdateRequest();
               SolrInputDocument doc = docs.inputDocument();
               updateRequest.add(doc);
-              meter.mark();
+              meterCount.incrementAndGet();
               try {
                 benchmarkClient.request(updateRequest, collection);
               } catch (Exception e) {
@@ -367,7 +369,8 @@ public class SolrBenchState {
 
   private void indexBatch(Docs docs, int docCount, int batchSize)
       throws SolrServerException, IOException {
-    Meter meter = new Meter();
+    long meterCount = 0;
+    long meterStartNanos = System.nanoTime();
     List<SolrInputDocument> batch = new ArrayList<>(batchSize);
     for (int i = 1; i <= docCount; i++) {
       batch.add(docs.inputDocument());
@@ -375,18 +378,18 @@ public class SolrBenchState {
         UpdateRequest updateRequest = new UpdateRequest();
         updateRequest.add(batch);
         benchmarkClient.request(updateRequest, collection);
-        meter.mark(batch.size());
+        meterCount += batch.size();
         batch.clear();
-        log(meter.getCount() + " docs at " + (long) meter.getMeanRate() + " doc/s");
+        logIndexingRate(meterCount, meterStartNanos);
       }
     }
     if (!batch.isEmpty()) {
       UpdateRequest updateRequest = new UpdateRequest();
       updateRequest.add(batch);
       benchmarkClient.request(updateRequest, collection);
-      meter.mark(batch.size());
+      meterCount += batch.size();
     }
-    log(meter.getCount() + " docs at " + (long) meter.getMeanRate() + " doc/s");
+    logIndexingRate(meterCount, meterStartNanos);
   }
 
   public void dumpCoreInfo() throws Exception {
@@ -494,6 +497,7 @@ public class SolrBenchState {
             + Path.of("").toAbsolutePath());
   }
 
+
   /** Logs the total size and first-level child sizes of the index directory. */
   private static void logIndexDirSize(Path indexDir, boolean logFirstLevel) {
     if (indexDir == null || !Files.exists(indexDir)) {
@@ -522,5 +526,11 @@ public class SolrBenchState {
     } catch (IOException e) {
       log("unable to log index directory size: " + e.getMessage());
     }
+  }
+
+  private static void logIndexingRate(long docCount, long startNanos) {
+    long elapsedSec = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - startNanos);
+    long rate = elapsedSec > 0 ? docCount / elapsedSec : 0;
+    log(docCount + " docs at " + rate + " doc/s");
   }
 }

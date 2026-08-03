@@ -22,6 +22,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
+import org.apache.solr.SolrBackend;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.impl.CloudSolrClient;
@@ -51,7 +52,7 @@ public class RemoteSolrBackend implements SolrBackend {
   }
 
   @Override
-  public SolrClient newClient(String collection) {
+  public SolrClient newSolrClient(String collection) {
     return new CloudSolrClient.Builder(
             List.of(adminClient.getClusterStateProvider().getQuorumHosts()))
         .withDefaultCollection(collection)
@@ -59,7 +60,7 @@ public class RemoteSolrBackend implements SolrBackend {
   }
 
   @Override
-  public SolrClient getAdminClient() {
+  public SolrClient getSolrClient() {
     return adminClient;
   }
 
