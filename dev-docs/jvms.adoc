@@ -1,14 +1,50 @@
-# Compiling and testing against different JVMs
+# Gradle and JVMs
 
-By default tests are executed with the same Java Gradle is using internally.
+Solr uses Gradle's Java toolchain support to separate the JDK running Gradle from the JDKs used for compilation and testing.
 
-To run tests against a different Java version, define a property called `runtime.java.home` or define an environment variable `RUNTIME_JAVA_HOME` pointing at the JDK installation folder.
+## Requirements
 
-If property is being used, it can be a system property (-D...) or a project property (-P...).
+- **To run Gradle**: Java 17 or later
+- **Main code compilation**: Java 21
+- **SolrJ modules compilation**: Java 17 (or Java 21 with language level 17)
+- **Tests**: Java 21 for main code, Java 17 for SolrJ modules
 
-*Example:*
+## JDK Discovery
 
-`gradlew test -p solr/test-framework --tests TestLogLevelAnnotations -Dtests.verbose=true -Druntime.java.home=/jvms/jdk14`
+Gradle automatically discovers installed JDKs from:
 
-Note that an alternative JVM can also be made the "default" setting
-by adding it to (project-local) gradle.properties.
+- `JAVA_HOME` environment variable
+- Common installation locations (platform-specific):
+  - macOS: `/Library/Java/JavaVirtualMachines/`
+  - Linux: `/usr/lib/jvm/`, `/usr/java/`
+  - Windows: `C:\Program Files\Java\`
+
+If Gradle cannot find your JDKs, you can manually specify them in `~/.gradle/gradle.properties`:
+
+----
+org.gradle.java.installations.paths=/path/to/jdk17,/path/to/jdk21
+----
+
+## Verification
+
+List detected JDKs:
+----
+./gradlew -q javaToolchains
+----
+
+Verify which JDK compiles specific modules:
+----
+./gradlew :solr:core:compileJava --info | grep -i "toolchain"
+./gradlew :solr:solrj:compileJava --info | grep -i "toolchain"
+----
+
+## Running Gradle with Different Java Versions
+
+You can run Gradle itself with any Java 17+ installation:
+----
+JAVA_HOME=/path/to/jdk17 ./gradlew build
+----
+
+Gradle will still use the configured toolchains (Java 21/17) for compilation and testing.
+
+See https://docs.gradle.org/current/userguide/toolchains.html[Gradle's toolchain documentation] for more information.
