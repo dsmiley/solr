@@ -17,10 +17,6 @@
 
 def skipReason
 
-if (rootProject.usesAltJvm) {
-  skipReason = "won't work with alternative java toolchain"
-}
-
 if (!propertyOrDefault("validation.errorprone", isCIBuild).asBoolean()) {
   skipReason =
       "skipped on builds not running inside CI environments, pass -Pvalidation.errorprone=true to enable"
