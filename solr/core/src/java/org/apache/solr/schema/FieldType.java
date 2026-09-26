@@ -1086,7 +1086,12 @@ public abstract class FieldType extends FieldProperties {
     }
 
     try {
-      parser.getReq().getCore().withSearcher(searcher -> searcher.rewrite(query));
+      // Use the request's own searcher (SolrQueryRequest#getSearcher), not
+      // SolrCore#getSearcher/withSearcher: a request built via
+      // SolrQueryRequest#wrapSearcher (e.g. QuerySenderListener's warming queries) binds an
+      // in-flight, not-yet-registered searcher, and SolrCore#getSearcher would deadlock waiting
+      // for that same registration to complete on the thread that's performing it.
+      parser.getReq().getSearcher().rewrite(query);
     } catch (IllegalStateException e) {
       // FieldExistsQuery.rewrite throws this if the field lacks doc values, norms, and vectors.
       throw new SolrException(ErrorCode.BAD_REQUEST, e);
